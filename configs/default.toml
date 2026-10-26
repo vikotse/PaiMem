@@ -10,7 +10,7 @@
 # Listening address / 监听地址 (PAIMEM_HOST)
 # Open bind address / 开放监听地址: "127.0.0.1" = loopback only / 仅本机；
 # "0.0.0.0" = all IPv4 interfaces / 所有 IPv4 网卡；or an available local IP / 也可填写本机指定 IP。
-host = "127.0.0.1"
+host = "0.0.0.0"
 # Listening port / 监听端口 (PAIMEM_PORT)
 port = 8000
 # Required: choose your secret / 必填：设置自己的服务密钥 (MEMORY_API_KEY)
