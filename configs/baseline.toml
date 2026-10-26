@@ -1,0 +1,406 @@
+# Copy to configs/config.local.toml, then edit ONE file for all three scripts.
+# 复制为 configs/config.local.toml，三个脚本只需填写这一份配置。
+# Existing exports override TOML. REPLACE_WITH_* and *.example must be replaced when enabled.
+# 已 export 的变量优先；启用的配置中 REPLACE_WITH_* 与 *.example 必须替换。
+# Unselected backend sections and disabled strategies need no credentials.
+# 未选择的后端和关闭的策略无需填写密钥。所有相对路径基于仓库根目录。
+
+# --- Memory service / 记忆服务 ---
+[service]
+# Listening address / 监听地址 (PAIMEM_HOST)
+# Open bind address / 开放监听地址: "127.0.0.1" = loopback only / 仅本机；
+# "0.0.0.0" = all IPv4 interfaces / 所有 IPv4 网卡；or an available local IP / 也可填写本机指定 IP。
+host = "127.0.0.1"
+# Listening port / 监听端口 (PAIMEM_PORT)
+port = 8000
+# Required: choose your secret / 必填：设置自己的服务密钥 (MEMORY_API_KEY)
+api_key = "REPLACE_WITH_MEMORY_API_KEY"
+# SQLite path / SQLite 路径 (MEMORY_DB_PATH)
+# When switching embedding models, use a NEW path and re-ingest; existing vectors are not converted.
+# 更换 embedding 模型时改用新路径并重新入库；已有向量不会自动转换。
+# Example / 示例: artifacts/memory-bge-m3.db. API key, batch_size and RPM/TPM changes can reuse the database.
+# 仅修改 API key、batch_size、RPM/TPM 无需换库。
+db_path = "artifacts/memory.db"
+# Diagnostic output root / 诊断输出根目录 (MEMORY_DIAGNOSTICS_DIR)
+# Local authenticated requests may replace .json reports only beneath this existing directory.
+# 本机鉴权请求只能在此已有目录下写入或替换 .json 报告；不允许符号链接。
+diagnostics_dir = "artifacts/diagnostics"
+
+# --- Dependency setup / 环境准备 ---
+[environment]
+# PaiMem Python version / 记忆服务 Python 版本 (PAIMEM_PYTHON)
+# Open version string / 开放版本字符串: choose a Python version compatible with these dependencies / 填写兼容依赖的 Python 版本；
+# examples are versions, not fixed enum choices / 示例为版本号，并非固定枚举选项。
+python = "3.11"
+# Package index; change to your mirror / 包索引，可替换镜像 (UV_DEFAULT_INDEX)
+package_index = "https://pypi.org/simple"
+# Model download endpoint / 模型下载地址 (HF_ENDPOINT)
+hf_endpoint = "https://huggingface.co"
+
+# --- Embedding selector / Embedding 后端选择 ---
+[embedding]
+# Options / 可填写值: "remote" = embedding API / 远程 API，读取 [embedding.remote]；
+# "local" = in-process SentenceTransformer / 本地模型，读取 [embedding.local]。 (EMBEDDING_BACKEND)
+backend = "remote"
+
+# --- Remote embedding: NO local download / 远程 embedding：不下载本地模型 ---
+[embedding.remote]
+# Changing this model requires a new service.db_path and re-ingestion / 更换模型需设置新数据库路径并重新入库。
+# Example model name; replace for your provider / 模型名示例，按供应商修改 (EMBEDDING_MODEL)
+model = "text-embedding-v4"
+# Required: replace example host, without /embeddings / 必改示例地址，不加 /embeddings (EMBEDDING_BASE_URL)
+base_url = "https://your-provider.example/v1"
+# Required provider credential / 必填供应商密钥 (EMBEDDING_API_KEY)
+api_key = "REPLACE_WITH_EMBEDDING_API_KEY"
+# Maximum inputs/request / 单次最大输入条数 (EMBEDDING_BATCH_SIZE)
+batch_size = 10
+# Requests per rolling minute; 0 off, e.g. 1500 / 每滚动分钟请求数，0 关闭，示例 1500 (EMBEDDING_RPM)
+rpm = 0
+# Estimated tokens/minute; 0 off, e.g. 800000 / 每分钟估算 token，0 关闭，示例 800000 (EMBEDDING_TPM)
+tpm = 0
+# Open string / 开放字符串: "" = no prefix / 不加前缀；nonempty string = literal custom prefix / 非空值直接作为自定义前缀。
+# Example / 示例: "query: ". Remote mode treats "auto" as literal text, not automatic selection / 远程的 "auto" 是普通文本。 (EMBEDDING_QUERY_PREFIX)
+query_prefix = ""
+
+# --- Local embedding: download then load inside PaiMem / 本地 embedding：先下载，再由 PaiMem 加载 ---
+[embedding.local]
+# Changing the model (including weights at the same path) requires a new database and re-ingestion.
+# 更换模型（包括替换同一路径下的权重）需换库并重新入库；启动检查无法识别同名权重变化。
+# Download/load directory / 下载及加载目录 (EMBEDDING_MODEL)
+model_path = "models/bge-small-en-v1.5"
+# Hugging Face repository / 模型仓库 (EMBEDDING_REPO_ID)
+repo_id = "BAAI/bge-small-en-v1.5"
+# false reuses existing directory / false 使用已有目录 (EMBEDDING_DOWNLOAD)
+# Options / 可填写值: true = download/update the selected repository revision / 下载或更新指定仓库版本；
+# false = reuse model_path; config.json must exist / 复用 model_path，须已有 config.json。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+download = true
+# Use a commit SHA for reproducibility / 固定复现时改为提交 SHA (EMBEDDING_REVISION)
+# Open revision string / 开放版本字符串: "main" = main branch / 主分支；
+# branch name or tag / 分支名或标签；commit SHA = fixed snapshot / 提交 SHA 固定快照。
+revision = "main"
+# Open device string / 设备字符串: "cpu" = CPU；"cuda" or "cuda:N" = NVIDIA GPU（N 为可见 GPU 序号，例如 "cuda:0"）；
+# "mps" = Apple Metal GPU. Choose a device available on this machine / 按本机可用硬件填写。 (EMBEDDING_DEVICE)
+device = "cpu"
+# Inputs per local batch / 本地批量条数 (EMBEDDING_BATCH_SIZE)
+batch_size = 64
+# Open string / 开放字符串: "auto" = preserve model default / 保留模型默认前缀；
+# "" = no prefix / 不加前缀；any other string = custom prefix / 其他字符串为自定义前缀，例如 "query: "。 (EMBEDDING_QUERY_PREFIX)
+query_prefix = "auto"
+
+# --- Reranking: switch and shared algorithm settings / 重排：开关与公共算法参数 ---
+[reranker]
+# Enable main reranker / 启用主重排 (PAIMEM_RERANKER_ENABLED)
+# Options / 可填写值: true = load the selected main reranker / 加载所选主重排；
+# false = disable main reranking / 关闭主重排。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+enabled = false
+# Options / 可填写值: "vllm" = vLLM /score service / vLLM 重排服务，读取 [reranker.vllm]；
+# "cross-encoder" = in-process CrossEncoder / 本地加载，读取 [reranker.local]。
+# For local loading, enter backend = "cross-encoder" exactly; "local" is not a backend value.
+# 本地加载请准确填写 backend = "cross-encoder"；此处不能填写 "local"。 (MEMORY_RERANKER_BACKEND)
+backend = "vllm"
+# Candidate pool size / 候选池大小 (MEMORY_RERANK_CANDIDATES)
+candidates = 400
+# Input token budget, including template / 输入 token 预算，含模板 (MEMORY_RERANKER_MAX_LENGTH)
+max_length = 512
+# Include neighboring context / 加入邻居上下文 (MEMORY_RERANK_SMALL2BIG_ENABLED)
+# Options / 可填写值: true = rerank with neighboring context / 使用邻居上下文重排；
+# false = rerank the candidate chunk only / 仅用候选片段重排。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+small2big_enabled = false
+# Empty disables score filtering; e.g. "0.2" / 空值关闭分数过滤，示例 "0.2" (MEMORY_RERANK_SCORE_THRESHOLD)
+score_threshold = ""
+
+# --- Local CrossEncoder / 本地 CrossEncoder ---
+[reranker.local]
+# Download/load directory / 下载及加载目录 (MEMORY_RERANKER_MODEL)
+model_path = "models/bge-reranker-v2-m3"
+# Model repository / 模型仓库 (RERANKER_REPO_ID)
+repo_id = "BAAI/bge-reranker-v2-m3"
+# false reuses existing directory / false 使用已有目录 (RERANKER_DOWNLOAD)
+# Options / 可填写值: true = download/update the selected repository revision / 下载或更新指定仓库版本；
+# false = reuse model_path; config.json must exist / 复用 model_path，须已有 config.json。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+download = true
+# Replace with commit SHA to pin / 可改提交 SHA 固定版本 (RERANKER_REVISION)
+# Open revision string / 开放版本字符串: "main" = main branch / 主分支；
+# branch name or tag / 分支名或标签；commit SHA = fixed snapshot / 提交 SHA 固定快照。
+revision = "main"
+# Open device string / 设备字符串: "cpu" = CPU；"cuda" or "cuda:N" = NVIDIA GPU（例如 "cuda:0"、"cuda:1"）；
+# "mps" = Apple Metal GPU. Local CrossEncoder only / 按本机硬件填写，仅用于本地 CrossEncoder。 (MEMORY_RERANKER_DEVICE)
+device = "cpu"
+# Local batch size / 本地批量大小 (MEMORY_RERANKER_BATCH_SIZE)
+batch_size = 16
+
+# --- vLLM client and deployment in ONE section / vLLM 客户端与部署配置集中于此 ---
+[reranker.vllm]
+# Options / 可填写值: "local" = prepare and run vLLM on this machine / 在本机准备并启动 vLLM；
+# "remote" = connect to an existing vLLM server, skip local installation/download / 连接已有服务，跳过本机安装与下载。 (VLLM_DEPLOYMENT)
+deployment = "local"
+# Served model name / 服务模型名 (MEMORY_RERANKER_MODEL)
+model = "MemReranker-4B"
+# Client URL; update when host/port changes, no /v1 or /score / 客户端地址，随监听地址同步修改 (MEMORY_RERANKER_BASE_URL)
+base_url = "http://127.0.0.1:8089"
+# Shared client/server key; empty explicitly disables auth / 服务端与客户端共用；空值明确关闭鉴权 (MEMORY_RERANKER_API_KEY)
+api_key = "REPLACE_WITH_RERANKER_API_KEY"
+# Client request timeout in seconds / 客户端超时，秒 (MEMORY_RERANKER_TIMEOUT)
+timeout = 120
+# Documents per vLLM /score request / 每次 vLLM /score 请求的文档条数 (MEMORY_RERANKER_BATCH_SIZE)
+batch_size = 16
+# Isolated Python environment / 独立 Python 环境 (VLLM_ENV)
+env = ".venv-vllm"
+# vLLM Python version / vLLM Python 版本 (VLLM_PYTHON)
+# Open version string / 开放版本字符串: choose a Python version compatible with these dependencies / 填写兼容依赖的 Python 版本；
+# examples are versions, not fixed enum choices / 示例为版本号，并非固定枚举选项。
+python = "3.11"
+# Pinned vLLM version / vLLM 固定版本 (VLLM_VERSION)
+version = "0.32.0"
+# GPU host download directory; ignored for remote deployment / GPU 机器下载目录，remote 时忽略 (RERANKER_MODEL_PATH)
+model_path = "models/MemReranker-4B"
+# MemReranker/Qwen3 repository / 模型仓库 (RERANKER_REPO_ID)
+repo_id = "IAAR-Shanghai/MemReranker-4B"
+# false reuses existing directory / false 使用已有目录 (RERANKER_DOWNLOAD)
+# Options / 可填写值: true = download/update the selected repository revision / 下载或更新指定仓库版本；
+# false = reuse model_path; config.json must exist / 复用 model_path，须已有 config.json。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+download = true
+# Use a commit SHA to pin / 可改提交 SHA 固定版本 (RERANKER_REVISION)
+# Open revision string / 开放版本字符串: "main" = main branch / 主分支；
+# branch name or tag / 分支名或标签；commit SHA = fixed snapshot / 提交 SHA 固定快照。
+revision = "main"
+# Local template destination / 本地模板目标路径 (RERANKER_CHAT_TEMPLATE)
+chat_template = "models/templates/qwen3_reranker.jinja"
+# Downloaded only if absent/empty; Qwen3-specific / 缺失或空文件时下载，仅适用 Qwen3 (RERANKER_CHAT_TEMPLATE_URL)
+chat_template_url = "https://raw.githubusercontent.com/vllm-project/vllm/v0.32.0/examples/pooling/score/template/qwen3_reranker.jinja"
+# Visible GPU IDs / 可见 GPU 编号 (CUDA_VISIBLE_DEVICES)
+# Open GPU list / 开放 GPU 列表: "0" = GPU 0；"0,1" = GPUs 0 and 1 / 使用 GPU 0 和 1；
+# indexes inside the process are renumbered from 0 / 进程内 GPU 序号会从 0 重新编号。
+cuda_visible_devices = "0"
+# Server listening address / 服务端监听地址 (VLLM_HOST)
+# Open bind address / 开放监听地址: "127.0.0.1" = loopback only / 仅本机；
+# "0.0.0.0" = all IPv4 interfaces / 所有 IPv4 网卡；or an available local IP / 也可填写本机指定 IP。
+host = "127.0.0.1"
+# Server port; update base_url too / 服务端口，同时修改 base_url (VLLM_PORT)
+port = 8089
+# vLLM 0.32.0 options / 可填写值: "auto", "half", "float16", "bfloat16", "float", "float32".
+# "auto" = infer from model / 按模型自动选择；"half" / "float16" = FP16；
+# "bfloat16" = BF16；"float" / "float32" = FP32. Hardware/model support is required / 需硬件与模型支持。 (VLLM_DTYPE)
+# Source / 来源: https://github.com/vllm-project/vllm/blob/v0.32.0/vllm/config/model.py
+dtype = "half"
+# GPU tensor parallelism / GPU 张量并行数 (VLLM_TENSOR_PARALLEL_SIZE)
+tensor_parallel_size = 1
+# Server token budget / 服务端 token 上限 (VLLM_MAX_MODEL_LEN)
+max_model_len = 1024
+# GPU memory fraction / 显存利用比例 (VLLM_GPU_MEMORY_UTILIZATION)
+gpu_memory_utilization = 0.9
+
+# --- Hybrid retrieval / 混合召回 ---
+[retrieval]
+# Options / 可填写值: "dense" = vector recall / 向量召回；
+# "hybrid" = dense + BM25 with RRF / 向量与 BM25 通过 RRF 融合；
+# "enhanced" = hybrid plus per-option query views for multiple-choice inputs / 在混合召回上增加各选项查询视图。 (MEMORY_RETRIEVAL_MODE)
+mode = "hybrid"
+# BM25 weight / BM25 权重 (MEMORY_LEXICAL_WEIGHT)
+lexical_weight = 0.5
+# Option-view weight; 0 disables / 选项视图权重，0 关闭 (MEMORY_OPTION_VIEW_WEIGHT)
+option_view_weight = 0
+# RRF smoothing constant / RRF 平滑常数 (MEMORY_RRF_K)
+rrf_k = 60
+
+# --- Chunking and context reconstruction / 分块与上下文重建 ---
+[context]
+# Chunk token budget / 分块 token 预算 (MEMORY_CHUNK_TOKENS)
+chunk_tokens = 320
+# Overlap token budget / 重叠 token 预算 (MEMORY_CHUNK_OVERLAP)
+chunk_overlap = 40
+# Embedding neighbors per side; 0 off / 编码时每侧邻居数，0 关闭 (MEMORY_CONTEXT_MESSAGES)
+messages = 0
+# Result neighbor radius / 结果邻居半径 (MEMORY_RESULT_WINDOW)
+result_window = 1
+# Top seeds eligible for expansion / 可扩展的前部种子数 (MEMORY_RESULT_WINDOW_SEED_K)
+result_window_seed_k = 20
+# 1 disables packing; >1 packs result windows / 1 关闭打包，>1 合并窗口 (MEMORY_PACK_SPAN)
+pack_span = 1
+
+# --- Time information / 时间信息 ---
+[time]
+# Include add timestamp in text / 在文本中加入写入时间 (MEMORY_INJECT_ADD_TIMESTAMP)
+# Options / 可填写值: true = show add time when the source timestamp is absent / 无原始时间戳时显示写入时间；
+# false = omit add time from rendered text / 不在输出文本中显示写入时间。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+inject_add_timestamp = false
+# Resolve relative dates on ingestion / 写入时解析相对日期 (MEMORY_RESOLVE_RELATIVE_TIME_ON_ADD)
+# Options / 可填写值: true = resolve relative dates using source time during ingestion / 写入时按原始时间解析相对日期；
+# false = preserve original date expressions / 保留原日期表达。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+resolve_relative_time_on_add = false
+# Enrich temporal information / 增强时间信息 (MEMORY_TEMPORAL_ENRICHMENT)
+# Options / 可填写值: true = render message dates and relative-date annotations / 输出消息日期及相对日期注释；
+# false = use ordinary timestamp rendering / 使用常规时间戳格式。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+temporal_enrichment = false
+
+# --- mempursuit strategy / 策略参数 ---
+[mempursuit]
+# Enable this strategy / 启用该策略 (MEMORY_MEMPURSUIT_ENABLED)
+# Options / 可填写值: true = enable MemPursuit selection / 启用 MemPursuit 选择；
+# false = disable MemPursuit selection / 关闭 MemPursuit。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+enabled = false
+# Candidate budget (also depends on top_k) / 候选预算，同时受 top_k 影响 (MEMORY_MEMPURSUIT_CANDIDATES)
+candidates = 150
+# Ridge regularization / 岭正则强度 (MEMORY_MEMPURSUIT_RIDGE)
+ridge = 1e-10
+# Use context vectors / 使用上下文向量 (MEMORY_MEMPURSUIT_SMALL2BIG_ENABLED)
+# Options / 可填写值: true = use neighboring context vectors / 使用邻居上下文向量；
+# false = use candidate chunk vectors / 使用候选片段向量。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+small2big_enabled = false
+
+# --- rank_fusion strategy / 策略参数 ---
+[rank_fusion]
+# Enable this strategy / 启用该策略 (MEMORY_RANK_FUSION_ENABLED)
+# Options / 可填写值: true = enable weighted rank fusion; requires reranker + MemPursuit / 启用加权排名融合，依赖重排与 MemPursuit；
+# false = disable rank fusion / 关闭排名融合。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+enabled = false
+# Dense rank weight / 向量排名权重 (MEMORY_RANK_FUSION_DENSE_WEIGHT)
+dense_weight = 0.35
+# Reranker rank weight / 重排排名权重 (MEMORY_RANK_FUSION_RERANK_WEIGHT)
+rerank_weight = 0.65
+# BM25 rank weight / BM25 排名权重 (MEMORY_RANK_FUSION_BM25_WEIGHT)
+bm25_weight = 0
+# RRF rank weight / RRF 排名权重 (MEMORY_RANK_FUSION_RRF_WEIGHT)
+rrf_weight = 0
+# MemPursuit rank weight / MemPursuit 排名权重 (MEMORY_RANK_FUSION_MP_WEIGHT)
+mp_weight = 0
+# MP prefix limit; -1 unlimited / MP 前缀上限，-1 不限 (MEMORY_RANK_FUSION_MP_LIMIT)
+mp_limit = 100
+# Remaining prefix limit; -1 unlimited / 剩余前缀上限，-1 不限 (MEMORY_RANK_FUSION_REMAINING_LIMIT)
+remaining_limit = 300
+
+# --- sira strategy / 策略参数 ---
+[sira]
+# Enable this strategy / 启用该策略 (MEMORY_SIRA_ENABLED)
+# Options / 可填写值: true = enable LLM query expansion; fill this section's model connection / 启用 LLM 查询扩展，需填写本节模型连接；
+# false = disable SIRA / 关闭 SIRA。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+enabled = false
+# Expansion contribution weight / 扩展词贡献权重 (MEMORY_SIRA_EXPANSION_WEIGHT)
+expansion_weight = 0.5
+# Maximum document frequency ratio / 最大文档频率比例 (MEMORY_SIRA_MAX_DF_RATIO)
+max_df_ratio = 0.05
+# Maximum phrase n-gram length / 最大短语 n-gram 长度 (MEMORY_SIRA_MAX_N)
+max_n = 4
+# LLM timeout in seconds / LLM 超时，秒 (MEMORY_SIRA_TIMEOUT)
+timeout = 30.0
+# LLM output token budget / LLM 输出 token 预算 (MEMORY_SIRA_MAX_TOKENS)
+max_tokens = 1024
+# Example LLM model name; verify with your provider / LLM 模型名示例，请按供应商核对 (MEMORY_SIRA_MODEL)
+model = "qwen-plus"
+# LLM API base / LLM 地址 (MEMORY_SIRA_API_BASE)
+base_url = "https://your-llm-provider.example/v1"
+# LLM key / LLM 密钥 (MEMORY_SIRA_API_KEY)
+api_key = "REPLACE_WITH_SIRA_API_KEY"
+
+
+# --- Long questions: extraction and temporary evidence / 长问题：提取查询与临时证据 ---
+[long_question]
+# Disabled by default; enable only after filling the LLM connection / 默认关闭，填写 LLM 连接后启用
+# MEMORY_LONG_QUESTION_ENABLED
+# Options / 可填写值: true = enable long-question processing; fill this section's LLM connection / 启用长问题处理，需填写本节 LLM 连接；
+# false = disable long-question processing / 关闭长问题处理。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+enabled = false
+# Example model name; verify with your provider / 模型名示例，按供应商核对 (MEMORY_LONG_QUESTION_MODEL)
+model = "qwen3.7-flash"
+# Replace when enabled / 启用时替换地址 (MEMORY_LONG_QUESTION_API_BASE)
+base_url = "https://your-llm-provider.example/v1"
+# Replace when enabled / 启用时填写密钥 (MEMORY_LONG_QUESTION_API_KEY)
+api_key = "REPLACE_WITH_LONG_QUESTION_API_KEY"
+# JSON object string; '{}' or '' sends no extra parameters / JSON 对象字符串，'{}' 或空字符串不传额外参数
+# Qwen example / 示例: '{"enable_thinking":false}'
+# DeepSeek example / 示例: '{"thinking":{"type":"disabled"}}'
+# MEMORY_LONG_QUESTION_EXTRA_BODY
+extra_body = '{}'
+# Trigger only above this character count, not tokens / 超过此字符数才触发，非 token 数 (MEMORY_LONG_QUESTION_THRESHOLD_CHARS)
+threshold_chars = 8000
+# Characters sent from the beginning / 发送给 LLM 的开头字符数 (MEMORY_LONG_QUESTION_HEAD_CHARS)
+head_chars = 2000
+# Characters sent from the end; head + tail <= threshold / 末尾字符数，两者之和不得超过阈值 (MEMORY_LONG_QUESTION_TAIL_CHARS)
+tail_chars = 2000
+# LLM request timeout, seconds / LLM 请求超时，秒 (MEMORY_LONG_QUESTION_TIMEOUT)
+timeout = 30
+
+# --- near strategy / 策略参数 ---
+[near]
+# Enable this strategy / 启用该策略 (MEMORY_NEAR_ENABLED)
+# Options / 可填写值: true = enable NEAR residual scoring / 启用 NEAR 残差评分；
+# false = disable NEAR / 关闭 NEAR。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+enabled = false
+# Residual layers / 残差层数 (MEMORY_NEAR_LAYERS)
+layers = 1
+# Residual score weight / 残差得分权重 (MEMORY_NEAR_WEIGHT)
+weight = 1.0
+# Normalize residuals / 归一化残差 (MEMORY_NEAR_NORMALIZE)
+# Options / 可填写值: true = use normalized residual layers / 使用归一化残差层；
+# false = use unnormalized residual layers / 使用未归一化残差层。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+normalize = false
+# Nearest neighbors per point / 每点近邻数量 (MEMORY_NEAR_NEIGHBORS)
+neighbors = 50
+# Anchor count / 锚点数 (MEMORY_NEAR_ANCHORS)
+anchors = 16
+# Routing count / 路由数量 (MEMORY_NEAR_ROUTING)
+routing = 4
+# Routing sharpness / 路由锐度 (MEMORY_NEAR_BETA)
+beta = 10.0
+# Maximum cached users / 最多缓存用户数 (MEMORY_NEAR_CACHE_MAX_USERS)
+cache_max_users = 4
+# Cache budget in MB / 缓存预算，MB (MEMORY_NEAR_CACHE_MAX_MB)
+cache_max_mb = 256.0
+
+# --- Role extraction: LLM and retrieval settings / 角色提取：LLM 与检索参数 ---
+[role_name]
+# Enable role extraction / 启用角色提取 (MEMORY_ROLE_NAME_ENABLED)
+# Options / 可填写值: true = enable LLM role extraction; requires a reranker / 启用 LLM 角色提取，需配置重排；
+# false = disable role extraction / 关闭角色提取。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+enabled = false
+# Example LLM model name; verify with your provider / LLM 模型名示例，请按供应商核对 (MEMORY_ROLE_NAME_MODEL)
+model = "qwen-plus"
+# LLM API base / LLM 地址 (MEMORY_ROLE_NAME_API_BASE)
+base_url = "https://your-llm-provider.example/v1"
+# LLM key / LLM 密钥 (MEMORY_ROLE_NAME_API_KEY)
+api_key = "REPLACE_WITH_ROLE_NAME_API_KEY"
+# Empty reuses main reranker; otherwise local model path / 空值复用主重排，否则填写本地模型路径 (MEMORY_ROLE_NAME_RERANKER_MODEL)
+reranker_model = ""
+# LLM timeout, seconds / 超时，秒 (MEMORY_ROLE_NAME_TIMEOUT)
+timeout = 60
+# Candidate count / 候选数 (MEMORY_ROLE_NAME_TOP_K)
+top_k = 8
+# Neighbor window / 邻居窗口 (MEMORY_ROLE_NAME_WINDOW)
+window = 1
+# Context characters / 上下文字符数 (MEMORY_ROLE_NAME_CONTEXT_CHARS)
+context_chars = 800
+# Output token budget / 输出 token 预算 (MEMORY_ROLE_NAME_MAX_TOKENS)
+max_tokens = 2500
+# Disable LLM reasoning / 禁用 LLM 思考 (MEMORY_ROLE_NAME_DISABLE_THINKING)
+# Options / 可填写值: true = request disabled LLM thinking / 请求关闭 LLM 思考；
+# false = do not request disabled thinking / 不请求关闭思考。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+# Takes effect only when this LLM/provider supports it / 仅在对应模型与接口支持时生效。
+disable_thinking = false
+
+# --- Conflict evidence: LLM and allocation / 冲突证据：LLM 与配额 ---
+[conflict]
+# Enable conflict evidence / 启用冲突证据 (MEMORY_CONFLICT_ENABLED)
+# Options / 可填写值: true = enable LLM conflict-evidence processing / 启用 LLM 冲突证据处理；
+# false = disable conflict-evidence processing / 关闭冲突策略。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+enabled = false
+# Example LLM model name; verify with your provider / LLM 模型名示例，请按供应商核对 (MEMORY_CONFLICT_MODEL)
+model = "qwen-plus"
+# LLM API base / LLM 地址 (MEMORY_CONFLICT_API_BASE)
+base_url = "https://your-llm-provider.example/v1"
+# LLM key / LLM 密钥 (MEMORY_CONFLICT_API_KEY)
+api_key = "REPLACE_WITH_CONFLICT_API_KEY"
+# Positive evidence fraction / 正向证据比例 (MEMORY_CONFLICT_POSITIVE_RATIO)
+positive_ratio = 0.2
+# Negative evidence fraction / 反向证据比例 (MEMORY_CONFLICT_NEGATIVE_RATIO)
+negative_ratio = 0.2
+# Scope/correction fraction / 范围与纠正证据比例 (MEMORY_CONFLICT_SCOPE_RATIO)
+scope_ratio = 0.2
+# Output token budget / 输出 token 预算 (MEMORY_CONFLICT_MAX_TOKENS)
+max_tokens = 8000
+# LLM timeout, seconds / 超时，秒 (MEMORY_CONFLICT_TIMEOUT)
+timeout = 120
+# Disable LLM reasoning / 禁用 LLM 思考 (MEMORY_CONFLICT_DISABLE_THINKING)
+# Options / 可填写值: true = request disabled LLM thinking / 请求关闭 LLM 思考；
+# false = do not request disabled thinking / 不请求关闭思考。Use unquoted TOML booleans / 填写不带引号的 TOML 布尔值。
+# Takes effect only when this LLM/provider supports it / 仅在对应模型与接口支持时生效。
+disable_thinking = false

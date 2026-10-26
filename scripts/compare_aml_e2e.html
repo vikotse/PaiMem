@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PaiMem 评测结果对比</title>
+<style>
+body{font:15px/1.6 system-ui,sans-serif;background:#f4f6fb;color:#192842;margin:0;padding:36px}main{max-width:1500px;margin:auto}h1{margin-bottom:4px}h2{font-size:20px;margin:0 0 6px}p{color:#546580}.panel{background:white;padding:22px;border-radius:14px;margin:20px 0;box-shadow:0 4px 20px #14284c09}.panel>p{margin:0 0 16px;font-size:13px}button{padding:9px 15px;border-radius:7px;cursor:pointer;background:#235be5;color:white;border:0}label{display:inline-block;margin:6px 20px 6px 0}select{padding:8px 12px;border:1px solid #c8d2e3;border-radius:7px;background:white;color:inherit;font:inherit;max-width:100%}#singleHint{margin:8px 0 12px;white-space:pre-wrap}[hidden]{display:none!important}.scroll{overflow:auto}table{border-collapse:separate;border-spacing:0;width:100%;white-space:nowrap}td,th{padding:12px 18px;text-align:right;border-bottom:1px solid #e5eaf2;min-width:150px}th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:white;min-width:190px}thead th,thead th:first-child{background:#f6f8fc}th{font-weight:600}small{color:#64748b;display:block;font-size:12px;font-weight:400}#notice{color:#946000;white-space:pre-wrap}.score{font-size:18px;font-weight:650}.bar{height:5px;background:#4076ee;border-radius:3px;margin-top:5px}#status{margin-left:16px;display:inline}.total td,.total th{background:#edf3ff!important;font-weight:650}.missing{color:#8995a8}.tables{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 20px}.tables .panel{min-width:0}@media(max-width:1050px){.tables{grid-template-columns:minmax(0,1fr)}}@media(max-width:700px){body{padding:14px}.panel{padding:16px}}
+input[type=search]{padding:8px 12px;border:1px solid #c8d2e3;border-radius:7px;font:inherit;min-width:230px;max-width:100%;box-sizing:border-box}.case-controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:end}.case-controls label{display:flex;flex-direction:column;gap:4px;margin:0}.case-controls select{min-width:160px}.case-status{white-space:pre-wrap;margin:12px 0;color:#546580}.case-warning{white-space:pre-wrap;color:#946000}.case-table{white-space:normal}.case-table th:first-child,.case-table td:first-child{position:static;min-width:180px;max-width:360px;overflow-wrap:anywhere}.case-table td:nth-child(2){min-width:180px;max-width:300px;text-align:left;overflow-wrap:anywhere}.case-table td:nth-child(3){min-width:250px;max-width:460px;text-align:left;overflow-wrap:anywhere}.case-table td,.case-table th{min-width:90px;padding:10px 12px}.case-link{background:transparent;color:#235be5;text-align:left;padding:0;overflow-wrap:anywhere;font:inherit;text-decoration:underline}.case-table tr.active td,.case-table tr.active th{background:#edf3ff}.case-pager{display:flex;align-items:center;gap:12px;margin-top:14px}.case-pager button:disabled{opacity:.45;cursor:default}.improved{color:#167445}.regressed{color:#b53939}.case-detail-header{display:flex;justify-content:space-between;gap:16px;margin-top:24px;border-top:1px solid #e5eaf2;padding-top:20px}.case-detail-header h3{margin:0;overflow-wrap:anywhere}.case-detail-header button{align-self:start;background:#eaf0fc;color:#235be5}.case-columns{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}.case-version{min-width:0;border:1px solid #dce4f0;border-radius:10px;padding:16px}.case-version h3{margin:0;overflow-wrap:anywhere}.case-version h4{margin:20px 0 6px}.case-version pre{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;max-height:380px;background:#f6f8fc;padding:12px;border-radius:7px;font:13px/1.65 ui-monospace,monospace}.case-version details{margin:10px 0}.case-version summary{cursor:pointer;color:#235be5;overflow-wrap:anywhere}.case-version ol{padding-left:24px}.case-version li{margin:10px 0;overflow-wrap:anywhere}.case-source{overflow-wrap:anywhere}.case-diagnostics{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:#546580}.case-rubric{border-left:3px solid #cad9f6;padding-left:10px;margin:12px 0}@media(max-width:900px){.case-columns{grid-template-columns:minmax(0,1fr)}}
+.retrieval-table{font-size:12px}.retrieval-table td,.retrieval-table th{min-width:115px;padding:8px;text-align:left}.retrieval-table td:first-child,.retrieval-table th:first-child{position:static;min-width:190px;max-width:230px;overflow-wrap:anywhere}.retrieval-table td:nth-child(2){min-width:260px;max-width:350px}.retrieval-table details pre{max-height:250px}.retrieval-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}.retrieval-controls select{max-width:160px}.retrieval-controls input{min-width:170px}.retrieval-pager{display:flex;gap:8px;align-items:center;margin:8px 0}.retrieval-pager button:disabled{opacity:.4}.retrieval-table .rank{font-weight:600}
+.version-picker{margin-top:14px;max-width:620px}.version-picker summary{cursor:pointer;color:#235be5}.version-actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.version-actions button:disabled{opacity:.45;cursor:default}.version-options{max-height:260px;overflow:auto;border:1px solid #dce4f0;border-radius:7px;padding:8px}.version-options label{display:flex;align-items:center;gap:8px;margin:0;padding:6px;overflow-wrap:anywhere}.case-columns.single{grid-template-columns:minmax(0,1fr)}
+.report-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}.report-tabs button{background:#e6ecf8;color:#29467d}.report-tabs button[aria-selected="true"]{background:#235be5;color:white}.report-tabs button:focus-visible{outline:3px solid #88a9f6;outline-offset:3px}
+.version-filter{margin-top:14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}.version-filter label{margin:0}#overall td,#overall th{min-width:100px;padding:10px 12px}#overall th:first-child{min-width:240px;max-width:360px;white-space:normal;overflow-wrap:anywhere;z-index:1}
+.version-table th:first-child{min-width:240px;max-width:360px;white-space:normal;overflow-wrap:anywhere;z-index:1}.total-cell{background:#edf3ff!important;font-weight:650}#singleDetail th[scope=colgroup]{text-align:center}#singleDetail thead tr:nth-child(2) th{position:static;min-width:150px;white-space:nowrap;text-align:right}.case-table .case-group-start>*{border-top:2px solid #dce4f0}
+.queue-badge{display:inline-block;padding:1px 7px;border-radius:5px;background:#eaf0fc;color:#29467d;font-size:12px}.queue-positive{background:#e4f4eb;color:#16613a}.queue-scope{background:#efe7fb;color:#653898}.queue-negative{background:#fff1df;color:#895007}.queue-conflict_summary{background:#fbe7e7;color:#992f2f}.queue-unknown{background:#edf0f4;color:#657185}
+.conflict-analysis{background:#f6f8fc;border:1px solid #dce4f0;border-radius:8px;padding:12px;margin:12px 0}.conflict-analysis h4{margin-top:0}.final-results-table{font-size:12px;white-space:normal}.final-results-table th,.final-results-table td{position:static!important;text-align:left;min-width:110px;padding:10px;vertical-align:top}.final-results-table th:first-child,.final-results-table td:first-child{min-width:70px}.final-results-table .final-memory-content{min-width:320px;max-width:540px;overflow-wrap:anywhere;white-space:pre-wrap}.final-results-table .final-memory-content pre{max-height:450px}.retrieval-controls button[aria-pressed="false"]{background:#eaf0fc;color:#235be5}
+</style><main><label for="language">Language / 语言 <select id="language"><option value="en">English</option><option value="zh-CN">简体中文</option></select></label><h1>PaiMem 评测结果对比</h1><p>横向比较多个方案的准确率、题数、耗时与花销，并分析同一题目得分不同的过程数据。</p>
+<div class="panel"><button id="refresh">刷新报告</button><label style="margin-left:18px"><input id="auto" type="checkbox" checked> 每 15 秒刷新</label><small id="status" role="status"></small><div class="version-filter"><label for="versionFilter">版本筛选</label><input id="versionFilter" type="search" placeholder="例如 baseline 或 experiment-01"><small>匹配版本名任意位置的文本，忽略大小写；清空显示全部，与版本勾选共同生效。</small></div><details class="version-picker"><summary id="versionSummary">版本筛选</summary><div class="version-actions"><input id="versionQuery" type="search" aria-label="搜索版本名称" placeholder="按版本名称搜索"><button id="versionAll">全选</button><button id="versionNone">全不选</button></div><small>全选／全不选仅作用于当前筛选后可见的选项；隐藏版本的勾选状态保持不变。</small><div id="versions" class="version-options"></div></details></div>
+<div id="notice"></div>
+<div class="report-tabs" role="tablist" aria-label="报告内容">
+<button id="tab-overall" role="tab" aria-controls="view-overall" aria-selected="true" tabindex="0">整体指标</button>
+<button id="tab-datasets" role="tab" aria-controls="view-datasets" aria-selected="false" tabindex="-1">各数据集对比</button>
+<button id="tab-categories" role="tab" aria-controls="view-categories" aria-selected="false" tabindex="-1">问题类型对比</button>
+<button id="tab-single" role="tab" aria-controls="view-single" aria-selected="false" tabindex="-1">单次评测</button>
+<button id="tab-cases" role="tab" aria-controls="view-cases" aria-selected="false" tabindex="-1">Case 分析</button>
+</div>
+<div id="view-cases" role="tabpanel" aria-labelledby="tab-cases" tabindex="0" hidden>
+<section class="panel" id="casePanel"><h2>Case 结果分析</h2><p>每道题内每个版本占一行。对比模式按题目 ID 对齐，分差 = 对比版本 − 基准版本；单版本模式可查看各阶段明细，包括尚未评测完成的题目。</p>
+<div class="case-controls"><label for="caseMode">查看模式<select id="caseMode"><option value="compare">版本对比</option><option value="single">单版本查看</option></select></label><label for="caseBaseline"><span id="caseBaselineLabel">基准版本</span><select id="caseBaseline"></select></label><label for="caseComparison">对比版本<select id="caseComparison"></select></label><label for="caseDataset">数据集<select id="caseDataset"></select></label><label id="caseCategoryLabel" for="caseCategory" hidden>问题类别<select id="caseCategory"><option value="">全部类别</option></select></label><label for="caseFilter">筛选<select id="caseFilter"><option value="different">得分不同</option><option value="regressed">退步</option><option value="improved">提升</option><option value="missing">缺失结果</option><option value="incomparable">不可直接比较</option><option value="all">全部 case</option></select></label><label for="caseScore">得分情况<select id="caseScore"><option value="all">全部得分</option><option value="full">满分（1）</option><option value="partial">部分得分（0 &lt; 得分 &lt; 1）</option><option value="zero">零分（0）</option><option value="not_full">未满分（有效得分 &lt; 1）</option><option value="unscored">无有效评分</option></select></label><label for="caseScoreVersion">按哪个版本的得分<select id="caseScoreVersion"><option value="comparison">对比版本</option><option value="baseline">基准版本</option></select></label><label for="caseQuery">查找题目<input id="caseQuery" type="search" placeholder="题目 ID 或问题关键词"></label><button id="caseLoad">刷新 case</button></div>
+<div id="caseStatus" class="case-status" role="status" aria-live="polite"></div><div id="caseWarnings" class="case-warning"></div>
+<div class="scroll"><table id="caseList" class="case-table" aria-label="跨版本 case 得分对比"></table></div><div id="casePager" class="case-pager" hidden><button id="casePrev">上一页</button><span id="casePage"></span><button id="caseNext">下一页</button></div><div id="caseDetail" hidden></div></section>
+</div>
+<div id="view-single" role="tabpanel" aria-labelledby="tab-single" tabindex="0" hidden>
+<section class="panel"><h2>单次评测结果</h2><p>所选版本占一行，按数据集分组展示准确率／得分、题数、耗时与花销。</p><label for="singleVersion">评测结果</label><select id="singleVersion"></select><small id="singleHint" role="status"></small><div id="singleTableWrap" class="scroll" hidden><table id="singleDetail" aria-label="单次评测结果各数据集指标"></table></div></section>
+<section class="panel" id="singleCategoriesPanel" hidden><h2>单次评测：问题类型统计</h2><div class="scroll"><table id="singleCategories"></table></div></section>
+</div>
+<div id="view-categories" role="tabpanel" aria-labelledby="tab-categories" tabindex="0" hidden>
+<p id="categoriesEmpty" hidden>当前筛选的版本没有问题类型统计。</p>
+<section class="panel" id="categoriesPanel" hidden><h2>各问题类型准确率 / 得分</h2><p>每行一个版本，每列一种问题类型。按有效评分题数加权；未评分题不计零分。混合评测口径的平均分仅供参考。题数包含对应数据集映射中尚未产出结果的题目。</p><div class="scroll"><table id="categories"></table></div></section>
+</div>
+<div id="view-overall" role="tabpanel" aria-labelledby="tab-overall" tabindex="0">
+<section class="panel"><h2>整体指标</h2><p>每行一个版本，每列一项指标；整体准确率／得分按已评测且有有效分数的题数加权。</p><div class="scroll"><table id="overall" aria-label="整体指标"></table></div></section>
+</div>
+<div id="view-datasets" role="tabpanel" aria-labelledby="tab-datasets" tabindex="0" hidden>
+<section class="panel"><h2>各数据集准确率 / 得分</h2><p>每行一个版本，每列一个数据集。二元评测显示准确率，其他评测显示平均得分；每格同时标注评测口径。</p><div class="scroll"><table id="accuracy" aria-label="各数据集准确率和得分"></table></div></section>
+<section class="panel"><h2>各数据集题数</h2><p>每格显示「已评测 / 总题数」，并列出已回答数与完成状态。</p><div class="scroll"><table id="counts" aria-label="各数据集题数"></table></div></section>
+<div class="tables"><section class="panel"><h2>各数据集耗时</h2><p>本次运行耗时（秒）；下方为请求累计耗时。</p><div class="scroll"><table id="timing" aria-label="各数据集耗时"></table></div></section>
+<section class="panel"><h2>各数据集花销</h2><p>按币种展示成功返回且有可计价用量的请求费用；缺少价格或费用时标注不完整。</p><div class="scroll"><table id="cost" aria-label="各数据集花销"></table></div></section></div>
+</div>
+<p>耗时汇总是各数据集本次运行耗时之和，并非并发运行的实际总时长；请求累计耗时可能包含历史重试。整体得分混合不同评测口径时仅供参考。原始评测结果更新后需重新生成整体报告。</p></main>
+<script>
+
+// English is the default; ?lang=zh-CN selects Chinese for shareable report links.
+const language = new URLSearchParams(location.search).get('lang') === 'zh-CN' ? 'zh-CN' : 'en';
+const uiEnglish = {
+  "PaiMem 评测结果对比": "PaiMem Evaluation Comparison",
+  "横向比较多个方案的准确率、题数、耗时与花销，并分析同一题目得分不同的过程数据。": "Compare accuracy, question counts, latency, and costs across configurations, and inspect why scores differ for the same question.",
+  "刷新报告": "Refresh reports",
+  "每 15 秒刷新": "Refresh every 15 seconds",
+  "版本筛选": "Version filter",
+  "例如 baseline 或 experiment-01": "e.g. baseline or experiment-01",
+  "匹配版本名任意位置的文本，忽略大小写；清空显示全部，与版本勾选共同生效。": "Case-insensitive substring match on version names. Clear to show all; selections still apply.",
+  "搜索版本名称": "Search version names",
+  "按版本名称搜索": "Search by version name",
+  "全选": "Select all",
+  "全不选": "Deselect all",
+  "全选／全不选仅作用于当前筛选后可见的选项；隐藏版本的勾选状态保持不变。": "Select all / Deselect all affects only visible options. Hidden selections are preserved.",
+  "报告内容": "Report views",
+  "整体指标": "Overall metrics",
+  "各数据集对比": "Dataset comparison",
+  "问题类型对比": "Question categories",
+  "单次评测": "Single evaluation",
+  "Case 分析": "Case analysis",
+  "Case 结果分析": "Case results",
+  "每道题内每个版本占一行。对比模式按题目 ID 对齐，分差 = 对比版本 − 基准版本；单版本模式可查看各阶段明细，包括尚未评测完成的题目。": "Each question has one row per version. Comparison aligns question IDs; score delta = comparison minus baseline. Single-version mode includes incomplete cases and stage details.",
+  "查看模式": "View mode",
+  "版本对比": "Compare versions",
+  "单版本查看": "Single version",
+  "基准版本": "Baseline version",
+  "对比版本": "Comparison version",
+  "数据集": "Dataset",
+  "问题类别": "Question category",
+  "全部类别": "All categories",
+  "筛选": "Filter",
+  "得分不同": "Different scores",
+  "退步": "Regressed",
+  "提升": "Improved",
+  "缺失结果": "Missing results",
+  "不可直接比较": "Not directly comparable",
+  "全部 case": "All cases",
+  "得分情况": "Score filter",
+  "全部得分": "All scores",
+  "满分（1）": "Full score (1)",
+  "部分得分（0 < 得分 < 1）": "Partial score (0 < score < 1)",
+  "零分（0）": "Zero score (0)",
+  "未满分（有效得分 < 1）": "Below full score (valid score < 1)",
+  "无有效评分": "No valid score",
+  "按哪个版本的得分": "Filter scores from",
+  "查找题目": "Find questions",
+  "题目 ID 或问题关键词": "Question ID or keywords",
+  "刷新 case": "Refresh cases",
+  "跨版本 case 得分对比": "Case scores across versions",
+  "上一页": "Previous",
+  "下一页": "Next",
+  "单次评测结果": "Single evaluation results",
+  "所选版本占一行，按数据集分组展示准确率／得分、题数、耗时与花销。": "One row for the selected version, with accuracy / score, question counts, timing, and costs grouped by dataset.",
+  "评测结果": "Evaluation results",
+  "单次评测结果各数据集指标": "Dataset metrics for one evaluation",
+  "单次评测：问题类型统计": "Single evaluation: question categories",
+  "当前筛选的版本没有问题类型统计。": "No question-category statistics for the selected versions.",
+  "各问题类型准确率 / 得分": "Accuracy / score by question category",
+  "每行一个版本，每列一种问题类型。按有效评分题数加权；未评分题不计零分。混合评测口径的平均分仅供参考。题数包含对应数据集映射中尚未产出结果的题目。": "One row per version and one column per category. Scores are weighted by valid scored questions; unscored questions are excluded. Averages across different scoring protocols are indicative only. Counts include questions without results.",
+  "每行一个版本，每列一项指标；整体准确率／得分按已评测且有有效分数的题数加权。": "One row per version and one column per metric. Overall accuracy / score is weighted by the number of questions with valid scores.",
+  "各数据集准确率 / 得分": "Accuracy / score by dataset",
+  "每行一个版本，每列一个数据集。二元评测显示准确率，其他评测显示平均得分；每格同时标注评测口径。": "One row per version and one column per dataset. Binary evaluations show accuracy; others show mean scores. Each cell identifies the scoring protocol.",
+  "各数据集准确率和得分": "Dataset accuracy and scores",
+  "各数据集题数": "Questions by dataset",
+  "每格显示「已评测 / 总题数」，并列出已回答数与完成状态。": "Each cell shows evaluated / total questions, answered counts, and completion status.",
+  "各数据集耗时": "Timing by dataset",
+  "本次运行耗时（秒）；下方为请求累计耗时。": "Elapsed seconds for this run, followed by cumulative request time.",
+  "各数据集花销": "Costs by dataset",
+  "按币种展示成功返回且有可计价用量的请求费用；缺少价格或费用时标注不完整。": "Costs of successful requests with available usage and pricing, grouped by currency. Missing prices or costs are marked incomplete.",
+  "耗时汇总是各数据集本次运行耗时之和，并非并发运行的实际总时长；请求累计耗时可能包含历史重试。整体得分混合不同评测口径时仅供参考。原始评测结果更新后需重新生成整体报告。": "Total elapsed time sums individual dataset runs, not the wall time of concurrent execution. Cumulative request time may include earlier retries. Overall scores across different protocols are indicative only. Regenerate the summary after updating evaluation results.",
+  "（不完整）": " (incomplete)",
+  "未知币种": "Unknown currency",
+  "版本": "Version",
+  "没有符合筛选条件的已选版本。": "No selected versions match the filter.",
+  "— 无对应分类": "— Category unavailable",
+  "有效评分 ": "Scored: ",
+  " 题": " questions",
+  "未知评测口径": "Unknown scoring protocol",
+  "请选择一个评测结果。": "Select an evaluation result.",
+  "尚未找到 summary.json，请先运行汇总命令。": "No summary.json found. Run the summary command first.",
+  "准确率 / 得分": "Accuracy / score",
+  "题数": "Questions",
+  "耗时": "Time",
+  "花销": "Cost",
+  "参与加权题数：": "Weighted questions: ",
+  "已回答 ": "Answered: ",
+  "已完成": "Complete",
+  "未完成": "Incomplete",
+  "请求累计 ": "Cumulative requests: ",
+  "整体（加权）/ 合计": "Overall (weighted) / Total",
+  "整体准确率 / 得分": "Overall accuracy / score",
+  "总题数": "Total questions",
+  "已回答": "Answered",
+  "已评测": "Evaluated",
+  "本次耗时合计 (s)": "Elapsed time this run (s)",
+  "请求累计耗时 (s)": "Cumulative request time (s)",
+  "输入 Token": "Input tokens",
+  "输出 Token": "Output tokens",
+  "请求数": "Requests",
+  "未知用量请求": "Requests with unknown usage",
+  "估算用量请求": "Requests with estimated usage",
+  "估算花销": "Estimated cost",
+  "评测完成": "Evaluation complete",
+  "是": "Yes",
+  "否": "No",
+  "所选方案的数据集、题数、已评测数或评测口径不同，得分不可直接等价比较。": "Selected configurations differ in datasets, question counts, evaluated counts, or scoring protocols. Scores are not directly comparable.",
+  "没有符合筛选条件的已选版本，请调整筛选文本或版本勾选。": "No selected versions match. Adjust the filter or version selections.",
+  "— 无该数据集": "— Dataset unavailable",
+  "整体（加权）": "Overall (weighted)",
+  "合计": "Total",
+  "版本筛选 · 当前展示 ": "Version filter · Showing ",
+  " · 已选 ": " · Selected ",
+  "没有匹配的版本。": "No matching versions.",
+  "请选择评测结果": "Select evaluation results",
+  "更新于 ": "Updated at ",
+  "读取失败：": "Unable to load: ",
+  "；请通过脚本 serve 命令打开页面。": ". Open this page with the script's serve command.",
+  "相同": "Same",
+  "全部数据集": "All datasets",
+  "查看版本": "Viewing version",
+  "单版本 case 结果": "Single-version case results",
+  " 个百分点": " percentage points",
+  "请选择至少一个版本和数据集；没有报告时请先生成 summary.json。": "Select at least one version and dataset. If no reports exist, generate summary.json first.",
+  "正在读取 case…": "Loading cases…",
+  "读取 case 失败：": "Unable to load cases: ",
+  "共 ": "Total: ",
+  " 题 · ": " questions · ",
+  "\n当前筛选 ": "\nFiltered: ",
+  "；可切换筛选或搜索条件。": ". Try another filter or search.",
+  "题目 ID / 详情": "Question ID / Details",
+  "问题": "Question",
+  "得分": "Score",
+  "输入 / Replay": "Input / Replay",
+  "分差": "Score delta",
+  "状态": "Status",
+  "已保存": "Saved",
+  "未保存": "Not saved",
+  "基准": "Baseline",
+  " 页": " pages",
+  "未保存或不可用": "Not saved or unavailable",
+  "来源：": "Source: ",
+  "全量检索候选 · ": "All retrieval candidates · ",
+  " 条": " items",
+  "默认按最终返回名次升序；可选择各通道排名及排序方向。缺失排名始终排在末尾，“—”表示未返回或该路未命中。": "Sorted by final rank ascending by default. Choose a retrieval channel and sort order. Missing ranks always appear last; “—” means not returned or not retrieved by that channel.",
+  "选项检索路由对应的 Query": "Queries for option retrieval routes",
+  "排序维度 ": "Sort by ",
+  " 检索排序维度": " retrieval sort dimension",
+  "最终排名": "Final rank",
+  " 排序方向": " sort order",
+  "升序": "Ascending",
+  "降序": "Descending",
+  "搜索 ID 或内容": "Search ID or content",
+  " 检索候选搜索": " retrieval candidate search",
+  "正在读取候选…": "Loading candidates…",
+  "全部候选 ": "All candidates: ",
+  " 条 · 当前筛选 ": " items · Filtered: ",
+  "记忆内容": "Memory content",
+  "：排名 / 得分": ": rank / score",
+  "返回名次": "Returned rank",
+  "读取检索候选失败：": "Unable to load retrieval candidates: ",
+  "原始检索队列": "Original retrieval queue",
+  "实施记录（正向）": "Affirmative evidence",
+  "否定记录（负向）": "Negative evidence",
+  "范围／更正核验": "Scope / correction verification",
+  "冲突说明（生成）": "Conflict explanation (generated)",
+  "来源未记录": "Source not recorded",
+  "判断与冲突检测": "Question classification and conflict detection",
+  "是，已识别为判断类问题": "Yes, classified as a judgment question",
+  "否，不是判断类问题": "No, not a judgment question",
+  "识别失败": "Classification failed",
+  "未执行": "Not run",
+  "未记录": "Not recorded",
+  "存在冲突证据": "Conflicting evidence found",
+  "未发现冲突证据": "No conflicting evidence found",
+  "判断失败，未得出结论": "Assessment failed; no conclusion",
+  "判断类问题：": "Judgment question: ",
+  "结合问题及各路入选证据的冲突判断：": "Conflict assessment using the question and selected evidence: ",
+  "策略未启用": "Strategy disabled",
+  "问题提供了选项": "Question includes options",
+  "无可检索记忆": "No retrievable memories",
+  "未执行原因：": "Skipped because: ",
+  "至少一个方向没有入选证据，未执行冲突判断。": "At least one evidence direction is empty; conflict assessment was skipped.",
+  "部分检索队列失败，保留成功队列，不补入原句结果。": "Some retrieval queues failed. Successful queues are retained without original-query backfill.",
+  "额外检索失败，已回退原始检索结果。": "Additional retrieval failed; using original retrieval results.",
+  "诊断状态：": "Diagnostic status: ",
+  "三路证据检索：存在冲突时，说明置于第一条，随后返回三路证据；原句排名仅作离线对照。": "Three-queue retrieval: when evidence conflicts, the explanation appears first, followed by evidence from three queues. Original-query ranks are provided for offline comparison.",
+  "三路证据检索（旧报告格式）：仅返回三路证据；原句排名仅作离线对照，冲突说明仅供诊断。": "Three-queue retrieval (older report format): returns evidence from three queues. Original-query ranks and conflict explanations are available only for diagnostics.",
+  "判断错误类型：": "Assessment error type: ",
+  "队列入选：": " selected: ",
+  "冲突说明": "Conflict explanation",
+  "最终 top-k · Search 返回内容": "Final top-k · Search response",
+  "未保存可还原的最终 top-k。可切换到全部原始候选，或查看下方回答上下文。": "Final top-k results were not saved. View all raw candidates or the answer context below.",
+  "保留最终返回顺序、各队列前缀及打包内容。原始语义队列排名指原问题检索、重排、打包后且混排前的位置；重排排名是打包前种子排名。历史未保存的排名显示“未记录”。": "Preserves returned order, queue prefixes, and packed content. Original semantic ranks are measured after retrieval, reranking, and packing, before queue merging. Reranker ranks refer to seeds before packing. Missing historical ranks are marked “Not recorded”.",
+  "队列 ": "Queue ",
+  " 最终结果队列": " final-result queue",
+  "全部队列": "All queues",
+  "搜索最终内容或 ID": "Search final content or ID",
+  " 最终结果搜索": " final-result search",
+  "展示 ": "Showing ",
+  "队列": "Queue",
+  "记忆内容（最终返回）": "Memory content (returned)",
+  "原始语义队列排名": "Original semantic queue rank",
+  "原问题重排：排名 / 得分": "Original-query reranker: rank / score",
+  "原问题融合：排名 / 得分": "Original-query fusion: rank / score",
+  "原问题 Dense：排名 / 得分": "Original-query dense: rank / score",
+  "展开完整返回内容": "Expand full returned content",
+  "不适用（生成说明）": "Not applicable (generated explanation)",
+  "未进入原始 top-k": "Outside original top-k",
+  "不适用": "Not applicable",
+  "最终 top-k": "Final top-k",
+  "全部原始候选": "All raw candidates",
+  "此视图展示存储的原始记忆片段，不添加队列前缀。带前缀的实际返回文本请查看“最终 top-k”。": "This view shows stored memory chunks without queue prefixes. See “Final top-k” for the actual returned text with prefixes.",
+  "未保存原始候选诊断。": "Raw candidate diagnostics were not saved.",
+  " · 得分 ": " · Score ",
+  "模式 ": "Mode ",
+  "参考答案": "Reference answer",
+  "评分要求": "Scoring criteria",
+  "原始 Messages": "Original messages",
+  " 条，按原始顺序展示": " items, in original order",
+  "未标注角色": "Unspecified role",
+  "完整原始 Messages JSON": "Full original messages JSON",
+  "Search / 检索结果": "Search / Retrieval results",
+  "召回数": "Retrieved count",
+  "证据 recall": "Evidence recall",
+  "答案在上下文中": "Answer in context",
+  "完整 search 响应 JSON": "Full search response JSON",
+  "传给回答流程的检索上下文": "Retrieval context sent to answer generation",
+  "Answer / 模型答案": "Answer / Model response",
+  "尚无成功答案": "No successful answer yet",
+  "本版本选项映射": "Option mapping for this version",
+  "正确选项：": "Correct option: ",
+  "回答 Prompt": "Answer prompt",
+  "完整 Answer JSON": "Full answer JSON",
+  "Judge / 评测情况": "Judge / Evaluation",
+  "尚无评测结果；不会按零分计算。": "No evaluation result yet; excluded rather than counted as zero.",
+  "判定：": "Verdict: ",
+  "正确": "Correct",
+  "错误": "Incorrect",
+  "预测选项：": "Predicted option: ",
+  " · 正确选项：": " · Correct option: ",
+  "预测选项内容": "Predicted option content",
+  "逐项要求是否满足": "Per-criterion results",
+  "要求满足比例：": "Fraction of criteria satisfied: ",
+  "（与最终得分分别展示）": " (shown separately from the final score)",
+  "Judge 理由 / 原始回复": "Judge rationale / Raw response",
+  "完整 Judge JSON": "Full judge JSON",
+  "完整 Replay / Input JSON": "Full replay / input JSON",
+  "正在读取 ": "Loading ",
+  " 的过程数据…": " stage details…",
+  "单版本 · 得分 ": "Single version · Score ",
+  "查看阶段 ": "Stage ",
+  "查看 case 阶段": "Select case stage",
+  "答案与 Judge": "Answer and judge",
+  "Search / 检索": "Search / Retrieval",
+  "Answer / 答案": "Answer",
+  "Judge / 评测": "Judge / Evaluation",
+  "完整输入": "Full input",
+  "全部过程": "All stages",
+  "关闭详情": "Close details",
+  "读取详情失败：": "Unable to load details: "
+};
+function t(text){return language === 'en' ? (uiEnglish[text] ?? text) : text}
+document.documentElement.lang = language;
+const languageSelect = document.getElementById('language');
+languageSelect.value = language;
+languageSelect.onchange = () => {
+ const url = new URL(location.href); url.searchParams.set('lang', languageSelect.value);
+ location.assign(url);
+};
+const walker = document.createTreeWalker(document, NodeFilter.SHOW_TEXT);
+const authoredText = [];
+while(walker.nextNode()){
+ const item = walker.currentNode;
+ if(!['SCRIPT','STYLE'].includes(item.parentElement?.tagName) && Object.hasOwn(uiEnglish,item.textContent.trim())) authoredText.push(item);
+}
+for(const item of authoredText){const key=item.textContent.trim();item.textContent=item.textContent.replace(key,t(key))}
+for(const element of document.querySelectorAll('[placeholder], [aria-label]')){
+ for(const attribute of ['placeholder','aria-label']) if(element.hasAttribute(attribute)) element.setAttribute(attribute,t(element.getAttribute(attribute)));
+}
+
+let reports=[], errors=[], selected=new Set(), selectNewVersions=true, singleVersion='', activeTab='overall';
+const $=id=>document.getElementById(id);
+const reportTabs=['overall','datasets','categories','single','cases'];
+function activateTab(id){
+ activeTab=id;
+ reportTabs.forEach(name=>{const active=name===id,tab=$('tab-'+name);tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;$('view-'+name).hidden=!active});
+ if(id==='cases')loadCases();else listRequest++;
+}
+reportTabs.forEach((id,index)=>{
+ const tab=$('tab-'+id);tab.onclick=()=>activateTab(id);
+ tab.onkeydown=event=>{let next;if(event.key==='ArrowRight')next=(index+1)%reportTabs.length;else if(event.key==='ArrowLeft')next=(index+reportTabs.length-1)%reportTabs.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=reportTabs.length-1;else return;event.preventDefault();activateTab(reportTabs[next]);$('tab-'+reportTabs[next]).focus()};
+});
+function matchesVersionFilter(version){return version.toLocaleLowerCase().includes($('versionFilter').value.trim().toLocaleLowerCase())}
+function chosenReports(){return reports.filter(r=>selected.has(r.version)&&matchesVersionFilter(r.version))}
+function node(tag,text){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e}
+function fmt(v,pct=false){return typeof v==='number'&&Number.isFinite(v)?(pct?(v*100).toFixed(2)+'%':v.toLocaleString(language,{maximumFractionDigits:4})):'—'}
+function scoreCell(cell,value){const text=node('div',fmt(value,true));text.className='score';cell.append(text);if(typeof value==='number'&&Number.isFinite(value)){const bar=node('div');bar.className='bar';bar.style.width=Math.max(0,Math.min(100,value*100))+'%';cell.append(bar)}}
+function costText(costs){return Object.entries(costs||{}).map(([c,v])=>fmt(v.estimated_cost)+' '+c+(v.complete?'':t('（不完整）'))).join(' / ')||'—'}
+function datasetCost(r){return costText({[r.cost_currency||t('未知币种')]:{estimated_cost:r.estimated_cost,complete:r.cost_complete}})}
+function renderVersionTable(id,chosen,columns){
+ const table=$(id),head=node('thead'),header=node('tr'),body=node('tbody');table.classList.add('version-table');
+ [t('版本'),...columns.map(column=>column.label)].forEach((label,index)=>{const cell=node('th',label);cell.scope='col';if(index&&columns[index-1].total)cell.className='total-cell';header.append(cell)});head.append(header);
+ chosen.forEach(report=>{
+  const row=node('tr'),name=node('th',report.version);name.scope='row';row.append(name);
+  columns.forEach(column=>{const cell=node('td');if(column.total)cell.className='total-cell';column.draw(cell,report);row.append(cell)});body.append(row);
+ });
+ if(!chosen.length){const row=node('tr'),cell=node('td',t('没有符合筛选条件的已选版本。'));cell.colSpan=columns.length+1;row.append(cell);body.append(row)}
+ table.replaceChildren(head,body);
+}
+function renderCategories(id,panel,chosen){
+ $(panel).hidden=!chosen.some(r=>r.categories?.length);
+ const names=[...new Set(chosen.flatMap(r=>(r.categories||[]).map(c=>c.category)))].sort();
+ renderVersionTable(id,chosen,names.map(name=>({label:name,draw(cell,report){
+  const row=(report.categories||[]).find(c=>c.category===name);
+  if(!row){cell.textContent=t('— 无对应分类');cell.className='missing';return}
+  scoreCell(cell,row.score_mean);
+  cell.append(node('small',t('有效评分 ')+row.scored_questions+' / '+row.questions+t(' 题')),node('small',row.contracts.join(' / ')||t('未知评测口径')));
+ }})));
+}
+function renderSingle(){
+ const report=reports.find(r=>r.version===singleVersion),table=$('singleDetail');
+ renderCategories('singleCategories','singleCategoriesPanel',report?[report]:[]);
+ if(!report){table.replaceChildren();$('singleTableWrap').hidden=true;$('singleHint').textContent=reports.length?t('请选择一个评测结果。'):t('尚未找到 summary.json，请先运行汇总命令。');return}
+ $('singleTableWrap').hidden=false;
+ $('singleHint').textContent=(report.warnings||[]).map(w=>report.version+': '+w).join('\n');
+ const head=node('thead'),groups=node('tr'),metrics=node('tr'),corner=node('th',t('版本'));corner.scope='col';corner.rowSpan=2;groups.append(corner);
+ const body=node('tbody'),tr=node('tr'),name=node('th',report.version);name.scope='row';tr.append(name);table.classList.add('version-table');
+ function detailGroup(label,row,total=false){
+  const group=node('th',label);group.colSpan=4;group.scope='colgroup';if(total)group.className='total-cell';groups.append(group);
+  [t('准确率 / 得分'),t('题数'),t('耗时'),t('花销')].forEach(label=>{const cell=node('th',label);cell.scope='col';if(total)cell.className='total-cell';metrics.append(cell)});
+  const score=node('td');scoreCell(score,row.score_mean);score.append(node('small',total?t('参与加权题数：')+fmt(row.scored_questions):row.contract||t('未知评测口径')));
+  const counts=node('td');counts.append(node('div',fmt(row.judged)+' / '+fmt(row.questions)),node('small',t('已回答 ')+fmt(row.answered)+(total?'':' · '+(row.complete?t('已完成'):t('未完成')))));
+  const timing=node('td');timing.append(node('div',fmt(row.wall_seconds_this_run)+' s'),node('small',t('请求累计 ')+fmt(row.request_seconds)+' s'));
+  const cost=node('td',total?costText(row.costs):datasetCost(row));
+  [score,counts,timing,cost].forEach(cell=>{if(total)cell.className='total-cell';tr.append(cell)});
+ }
+ [...report.datasets].sort((a,b)=>a.dataset.localeCompare(b.dataset)).forEach(row=>detailGroup(row.dataset,row));
+ detailGroup(t('整体（加权）/ 合计'),report.totals,true);
+ head.append(groups,metrics);body.append(tr);table.replaceChildren(head,body);
+}
+
+function renderOverall(chosen){
+ const columns=[[t('整体准确率 / 得分'),(cell,r)=>{scoreCell(cell,r.score_mean);cell.append(node('small',t('参与加权题数：')+fmt(r.scored_questions)))}],
+  ...[[t('总题数'),'questions'],[t('已回答'),'answered'],[t('已评测'),'judged'],[t('本次耗时合计 (s)'),'wall_seconds_this_run'],[t('请求累计耗时 (s)'),'request_seconds'],[t('输入 Token'),'input_tokens'],[t('输出 Token'),'output_tokens'],[t('请求数'),'requests'],[t('未知用量请求'),'unknown_usage'],[t('估算用量请求'),'estimated_usage']].map(([label,key])=>[label,(cell,r)=>cell.textContent=fmt(r[key])]),
+  [t('估算花销'),(cell,r)=>cell.textContent=costText(r.costs)],[t('评测完成'),(cell,r)=>cell.textContent=r.complete?t('是'):t('否')]];
+ const head=node('thead'),header=node('tr'),body=node('tbody');
+ [t('版本'),...columns.map(([label])=>label)].forEach(label=>{const cell=node('th',label);cell.scope='col';header.append(cell)});head.append(header);
+ chosen.forEach(report=>{const row=node('tr'),name=node('th',report.version);name.scope='row';row.append(name);columns.forEach(([,draw])=>{const cell=node('td');draw(cell,report.totals);row.append(cell)});body.append(row)});
+ if(!chosen.length){const row=node('tr'),cell=node('td',t('没有符合筛选条件的已选版本。'));cell.colSpan=columns.length+1;row.append(cell);body.append(row)}
+ $('overall').replaceChildren(head,body);
+}
+function render(){
+ const chosen=chosenReports();
+ renderCategories('categories','categoriesPanel',chosen);
+ $('categoriesEmpty').hidden=!$('categoriesPanel').hidden;
+ const names=[...new Set(chosen.flatMap(r=>r.datasets.map(d=>d.dataset)))].sort();
+ const notes=[...errors], signatures=new Set();
+ chosen.forEach(report=>{signatures.add(JSON.stringify(report.datasets.map(x=>[x.dataset,x.contract,x.questions,x.judged]).sort((a,b)=>a[0].localeCompare(b[0]))));(report.warnings||[]).forEach(w=>notes.push(report.version+': '+w))});
+ if(signatures.size>1)notes.unshift(t('所选方案的数据集、题数、已评测数或评测口径不同，得分不可直接等价比较。'));
+ if(!chosen.length)notes.unshift(reports.length?t('没有符合筛选条件的已选版本，请调整筛选文本或版本勾选。'):t('尚未找到 summary.json，请先运行汇总命令。'));
+ $('notice').textContent=notes.join('\n');
+ renderOverall(chosen);
+ const matrices=[['accuracy',(cell,r)=>{scoreCell(cell,r.score_mean);cell.append(node('small',r.contract||t('未知评测口径')))}],['counts',(cell,r)=>{cell.append(node('div',fmt(r.judged)+' / '+fmt(r.questions)),node('small',t('已回答 ')+fmt(r.answered)+' · '+(r.complete?t('已完成'):t('未完成'))))}],['timing',(cell,r)=>{cell.append(node('div',fmt(r.wall_seconds_this_run)),node('small',t('请求累计 ')+fmt(r.request_seconds)+' s'))}],['cost',(cell,r)=>cell.textContent=datasetCost(r)]];
+ matrices.forEach(([id,draw])=>renderVersionTable(id,chosen,[
+  ...names.map(name=>({label:name,draw(cell,report){const row=report.datasets.find(d=>d.dataset===name);if(row)draw(cell,row);else{cell.textContent=t('— 无该数据集');cell.className='missing'}}})),
+  {label:id==='accuracy'?t('整体（加权）'):t('合计'),total:true,draw(cell,report){const row=report.totals;if(id==='accuracy')scoreCell(cell,row.score_mean);else if(id==='counts')cell.textContent=fmt(row.judged)+' / '+fmt(row.questions);else if(id==='timing')cell.textContent=fmt(row.wall_seconds_this_run);else cell.textContent=costText(row.costs)}}
+ ]));
+}
+function visibleVersionOptions(){
+ const query=$('versionQuery').value.trim().toLocaleLowerCase();
+ return reports.filter(r=>matchesVersionFilter(r.version)&&r.version.toLocaleLowerCase().includes(query));
+}
+function setVisibleVersions(checked){
+ const visible=visibleVersionOptions();if(!visible.length)return;
+ visible.forEach(r=>checked?selected.add(r.version):selected.delete(r.version));
+ selectNewVersions=reports.every(r=>selected.has(r.version));selectionChanged();
+}
+function renderVersionOptions(){
+ const visible=visibleVersionOptions();
+ $('versionAll').disabled=$('versionNone').disabled=!visible.length;
+ $('versionSummary').textContent=t('版本筛选 · 当前展示 ')+chosenReports().length+t(' · 已选 ')+reports.filter(r=>selected.has(r.version)).length+' / '+reports.length;
+ $('versions').replaceChildren();
+ visible.forEach(r=>{
+  const label=node('label'),input=node('input');input.type='checkbox';input.checked=selected.has(r.version);
+  input.onchange=()=>{input.checked?selected.add(r.version):selected.delete(r.version);selectNewVersions=reports.every(r=>selected.has(r.version));selectionChanged()};
+  label.append(input,document.createTextNode(r.version));$('versions').append(label);
+ });
+ if(!$('versions').childElementCount)$('versions').append(node('small',t('没有匹配的版本。')));
+}
+function selectionChanged(){
+ renderVersionOptions();render();
+ const versions=chosenReports().map(r=>r.version);
+ if(!versions.includes(singleVersion))singleVersion=versions.length===1?versions[0]:'';
+ const single=$('singleVersion'),placeholder=node('option',t('请选择评测结果'));placeholder.value='';single.replaceChildren(placeholder);
+ versions.forEach(v=>{const option=node('option',v);option.value=v;single.append(option)});single.value=singleVersion;
+ renderSingle();initCaseControls();
+}
+async function refresh(){
+ try{
+  const res=await fetch('/api/reports',{cache:'no-store'});if(!res.ok)throw Error('HTTP '+res.status);const data=await res.json();reports=data.reports;errors=data.errors||[];
+  selected=new Set(reports.filter(r=>selectNewVersions||selected.has(r.version)).map(r=>r.version));
+  selectionChanged();$('status').textContent=t('更新于 ')+new Date().toLocaleTimeString();
+ }catch(error){$('status').textContent=t('读取失败：')+error.message+t('；请通过脚本 serve 命令打开页面。')}
+}
+let casePage=1, caseData=null, activeCase='', activeDataset='', caseStage='outcome', listRequest=0, detailRequest=0, queryTimer;
+const statusNames={improved:t('提升'),regressed:t('退步'),same:t('相同'),missing:t('缺失结果'),incomparable:t('不可直接比较')};
+function chooseOptions(id,values,preferred){
+ const select=$(id),old=select.value;select.replaceChildren();
+ values.forEach(value=>{const option=node('option',value);option.value=value;select.append(option)});
+ select.value=values.includes(old)?old:(values.includes(preferred)?preferred:(values[0]||''));
+}
+function initCaseControls(){
+ const oldKey=caseKey(),versions=chosenReports().map(r=>r.version);
+ if(versions.length===1)$('caseMode').value='single';
+ updateCaseMode();
+ // Preserve valid selections; initial defaults follow the displayed version order.
+ chooseOptions('caseBaseline',versions,versions[0]);
+ chooseOptions('caseComparison',versions,versions[versions.length-1]);
+ ensureDistinctVersions();
+ initCaseDatasets();
+ if(oldKey!==caseKey()){casePage=1;resetCaseDetail()}
+ loadCases();
+}
+function initCaseDatasets(){
+ const versions=isSingleCase()?[$('caseBaseline').value]:[$('caseBaseline').value,$('caseComparison').value];
+ chooseOptions('caseDataset',['*',...[...new Set(reports.filter(r=>versions.includes(r.version)).flatMap(r=>r.datasets.map(d=>d.dataset)))].sort()],'*');
+ $('caseDataset').options[0].textContent=t('全部数据集');
+}
+function isSingleCase(){return $('caseMode').value==='single'}
+function ensureDistinctVersions(){
+ if(!isSingleCase()&&$('caseBaseline').value===$('caseComparison').value){
+  const other=[...$('caseComparison').options].find(option=>option.value!==$('caseBaseline').value);
+  if(other)$('caseComparison').value=other.value;
+ }
+}
+function updateCaseMode(){
+ const single=isSingleCase();$('caseBaselineLabel').textContent=single?t('查看版本'):t('基准版本');
+ $('caseComparison').parentElement.hidden=single;$('caseFilter').parentElement.hidden=single;
+ $('caseScoreVersion').parentElement.hidden=single;
+ $('caseList').setAttribute('aria-label',single?t('单版本 case 结果'):t('跨版本 case 得分对比'));
+}
+function caseKey(){return [$('caseMode').value,$('caseBaseline').value,isSingleCase()?'':$('caseComparison').value,$('caseDataset').value].join('\0')}
+function caseParams(){return new URLSearchParams(isSingleCase()?{version:$('caseBaseline').value,dataset:$('caseDataset').value}:{baseline:$('caseBaseline').value,comparison:$('caseComparison').value,dataset:$('caseDataset').value})}
+async function caseFetch(path,params){
+ const response=await fetch(path+'?'+params,{cache:'no-store'}),data=await response.json();
+ if(!response.ok)throw Error(data.error||'HTTP '+response.status);return data;
+}
+function resetCaseDetail(){activeCase='';activeDataset='';detailRequest++;$('caseDetail').hidden=true;$('caseDetail').replaceChildren()}
+function deltaText(value){return typeof value==='number'?(value>0?'+':'')+fmt(value*100)+t(' 个百分点'):'—'}
+async function loadCases(){
+ const request=++listRequest;
+ if(activeTab!=='cases')return;
+ if(!$('caseBaseline').value||(!isSingleCase()&&!$('caseComparison').value)||!$('caseDataset').value){
+  caseData=null;$('caseWarnings').textContent='';$('caseStatus').textContent=t('请选择至少一个版本和数据集；没有报告时请先生成 summary.json。');$('caseList').replaceChildren();$('casePager').hidden=true;return;
+ }
+ const params=caseParams();params.set('filter',$('caseFilter').value);params.set('q',$('caseQuery').value);params.set('page',casePage);params.set('category',$('caseCategory').value);
+ params.set('score_filter',$('caseScore').value);if(!isSingleCase())params.set('score_version',$('caseScoreVersion').value);
+ $('caseStatus').textContent=t('正在读取 case…');
+ try{
+  const data=await caseFetch('/api/cases',params);if(request!==listRequest)return;
+  const categorySelect=$('caseCategory'),previous=categorySelect.value;
+  categorySelect.replaceChildren();
+  [['',t('全部类别')],...(data.categories||[]).map(c=>[c,c])].forEach(([value,label])=>{const option=node('option',label);option.value=value;categorySelect.append(option)});
+  categorySelect.value=(data.categories||[]).includes(previous)?previous:'';
+  $('caseCategoryLabel').hidden=!(data.categories||[]).length;
+  if(previous&&categorySelect.value!==previous){casePage=1;return loadCases()}
+  caseData=data;casePage=data.page;renderCases();
+ }catch(error){if(request===listRequest){$('caseStatus').textContent=t('读取 case 失败：')+error.message;$('caseList').replaceChildren();$('casePager').hidden=true;$('caseWarnings').textContent=''}}
+}
+function renderCases(){
+ const data=caseData;if(!data)return;const single=data.mode==='single';
+ $('caseStatus').textContent=t('共 ')+data.total+t(' 题 · ')+(single?data.version:Object.entries(data.counts).map(([key,count])=>statusNames[key]+' '+count).join(' · '))+t('\n当前筛选 ')+data.filtered_count+t(' 题')+(data.filtered_count?'':t('；可切换筛选或搜索条件。'));
+ $('caseWarnings').textContent=data.warnings.join('\n');
+ const head=node('thead'),tr=node('tr');
+ (single?[t('版本'),t('题目 ID / 详情'),t('问题'),t('得分'),t('输入 / Replay'),'Answer','Judge']:[t('版本'),t('题目 ID / 详情'),t('问题'),t('得分'),t('分差'),t('状态')]).forEach(label=>{const th=node('th',label);th.scope='col';tr.append(th)});head.append(tr);
+ const body=node('tbody');$('caseList').replaceChildren(head,body);
+ data.cases.forEach(row=>{
+  const versions=single?[[data.version,row.score]]:[[data.baseline,row.baseline_score],[data.comparison,row.comparison_score]];
+  versions.forEach(([version,score],index)=>{
+   const tr=node('tr');if(row.id===activeCase&&row.dataset===activeDataset)tr.className='active';if(index===0)tr.classList.add('case-group-start');
+   const name=node('th',version);name.scope='row';name.append(node('small',single?t('查看版本'):index?t('对比版本'):t('基准版本')));
+   const id=node('td'),button=node('button',row.id);button.className='case-link';button.onclick=()=>openCase(row.id,row.dataset);id.append(button,node('small',row.dataset));
+   const question=node('td',row.question);if(row.category)question.append(node('small',row.category+(row.subtype?' · '+row.subtype:'')));
+   tr.append(name,id,question,node('td',fmt(score,true)));
+   if(single){['input','answer','judge'].forEach(stage=>tr.append(node('td',row.stages[stage]?t('已保存'):t('未保存'))));body.append(tr);return}
+   const delta=node('td',index?deltaText(row.delta):'—');if(index)delta.className=row.status;tr.append(delta);
+   const state=node('td',index?statusNames[row.status]:t('基准'));if(index&&row.reason)state.append(node('small',row.reason));tr.append(state);body.append(tr);
+  });
+ });
+ const pages=Math.max(1,Math.ceil(data.filtered_count/data.page_size));$('casePager').hidden=!data.filtered_count;
+ $('casePage').textContent=data.page+' / '+pages+t(' 页');$('casePrev').disabled=data.page<=1;$('caseNext').disabled=data.page>=pages;
+}
+function printable(value){return typeof value==='string'?value:JSON.stringify(value,null,2)}
+function block(parent,title,value,missing=t('未保存或不可用')){
+ parent.append(node('h4',title));parent.append(value===null||value===undefined?node('small',missing):node('pre',printable(value)));
+}
+function rawDetails(parent,title,value){
+ if(value===null||value===undefined)return;
+ const details=node('details');details.append(node('summary',title),node('pre',printable(value)));parent.append(details);
+}
+function sourceNote(parent,source){if(source){const note=node('small',t('来源：')+source);note.className='case-source';parent.append(note)}}
+function renderFullDiagnostics(parent,version){
+ const info=version.search_diagnostics;if(!info)return;
+ parent.append(node('h4',t('全量检索候选 · ')+fmt(info.candidate_count)+t(' 条')));
+ parent.append(node('small',t('默认按最终返回名次升序；可选择各通道排名及排序方向。缺失排名始终排在末尾，“—”表示未返回或该路未命中。')));
+ sourceNote(parent,version.diagnostic_source);
+ if(info.option_views&&Object.keys(info.option_views).length)rawDetails(parent,t('选项检索路由对应的 Query'),info.option_views);
+ const channels=info.channels||[],controls=node('div');controls.className='retrieval-controls';
+ const label=node('label',t('排序维度 ')),route=node('select');route.setAttribute('aria-label',version.version+t(' 检索排序维度'));
+ const finalOption=node('option',t('最终排名'));finalOption.value='returned_rank';route.append(finalOption);
+ channels.forEach(name=>{const option=node('option',name);option.value=name;route.append(option)});
+ route.value='returned_rank';
+ const order=node('select');order.setAttribute('aria-label',version.version+t(' 排序方向'));[['asc',t('升序')],['desc',t('降序')]].forEach(([value,text])=>{const option=node('option',text);option.value=value;order.append(option)});
+ label.append(route);const search=node('input');search.type='search';search.placeholder=t('搜索 ID 或内容');search.setAttribute('aria-label',version.version+t(' 检索候选搜索'));
+ controls.append(label,order,search);parent.append(controls);
+ const status=node('small'),wrap=node('div'),table=node('table'),pager=node('div');
+ wrap.className='scroll';table.className='retrieval-table';wrap.append(table);pager.className='retrieval-pager';
+ const prev=node('button',t('上一页')),pageLabel=node('span'),next=node('button',t('下一页'));pager.append(prev,pageLabel,next);
+ parent.append(status,wrap,pager);
+ let page=1,serial=0,searchTimer;const born=detailRequest;
+ async function load(){
+  const current=++serial,params=caseParams();params.set('id',activeCase);params.set('dataset',activeDataset);params.set('version',version.version);
+  params.set('channel',route.value);params.set('order',order.value);params.set('q',search.value);params.set('page',page);
+  status.textContent=t('正在读取候选…');
+  try{
+   const data=await caseFetch('/api/case/diagnostics',params);
+   if(current!==serial||born!==detailRequest)return;
+   page=data.page;status.textContent=t('全部候选 ')+fmt(data.total)+t(' 条 · 当前筛选 ')+fmt(data.filtered_count)+t(' 条');
+   const head=node('thead'),headRow=node('tr');
+   ['ID',t('记忆内容'),...channels.map(name=>name+t('：排名 / 得分')),t('返回名次')].forEach(title=>{const th=node('th',title);th.scope='col';headRow.append(th)});
+   head.append(headRow);const body=node('tbody');table.replaceChildren(head,body);
+   data.candidates.forEach(row=>{
+    const tr=node('tr'),id=node('td',row.id),content=node('td'),excerpt=String(row.content||'');
+    content.style.whiteSpace='normal';const detail=node('details');detail.append(node('summary',excerpt.slice(0,160)+(excerpt.length>160?'…':'')),node('pre',excerpt));content.append(detail);tr.append(id,content);
+    channels.forEach(name=>{
+     const channel=row.channels?.[name],cell=node('td');
+     cell.append(node('span',channel?.rank==null?'—':'#'+channel.rank),node('small',channel?.score==null?'—':String(channel.score)));tr.append(cell);
+    });
+    tr.append(node('td',row.returned_rank==null?'—':'#'+row.returned_rank));body.append(tr);
+   });
+   const pages=Math.max(1,Math.ceil(data.filtered_count/data.page_size));pageLabel.textContent=page+' / '+pages+t(' 页');
+   prev.disabled=page<=1;next.disabled=page>=pages;pager.hidden=!data.filtered_count;
+  }catch(error){if(current===serial&&born===detailRequest){status.textContent=t('读取检索候选失败：')+error.message;table.replaceChildren();pager.hidden=true}}
+ }
+ route.onchange=order.onchange=()=>{page=1;load()};search.oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{page=1;load()},250)};
+ prev.onclick=()=>{page--;load()};next.onclick=()=>{page++;load()};load();
+}
+const queueLabels={semantic:t('原始检索队列'),positive:t('实施记录（正向）'),negative:t('否定记录（负向）'),scope:t('范围／更正核验'),conflict_summary:t('冲突说明（生成）'),unknown:t('来源未记录')};
+function renderConflictAnalysis(parent,version){
+ const info=version.conflict_analysis||{},panel=node('div');panel.className='conflict-analysis';
+ panel.append(node('h4',t('判断与冲突检测')));
+ const classification={judgment:t('是，已识别为判断类问题'),non_judgment:t('否，不是判断类问题'),failed:t('识别失败'),not_run:t('未执行'),unknown:t('未记录')};
+ const assessment={conflict:t('存在冲突证据'),no_conflict:t('未发现冲突证据'),failed:t('判断失败，未得出结论'),not_run:t('未执行'),unknown:t('未记录')};
+ panel.append(node('div',t('判断类问题：')+(classification[info.classification]||t('未记录'))),
+              node('div',t('结合问题及各路入选证据的冲突判断：')+(assessment[info.assessment]||t('未记录'))));
+ const reasons={disabled:t('策略未启用'),options:t('问题提供了选项'),empty_memories:t('无可检索记忆')};
+ if(info.skip_reason)panel.append(node('small',t('未执行原因：')+(reasons[info.skip_reason]||info.skip_reason)));
+ if(info.status==='insufficient_evidence')panel.append(node('small',t('至少一个方向没有入选证据，未执行冲突判断。')));
+ if(info.status==='retrieval_failed')panel.append(node('small',info.strategy==='three_queue_v1'?t('部分检索队列失败，保留成功队列，不补入原句结果。'):t('额外检索失败，已回退原始检索结果。')));
+ if(info.status)panel.append(node('small',t('诊断状态：')+info.status));
+ if(info.strategy==='three_queue_v1'&&info.classification==='judgment')panel.append(node('small',info.explanation_placement==='first_result'?t('三路证据检索：存在冲突时，说明置于第一条，随后返回三路证据；原句排名仅作离线对照。'):t('三路证据检索（旧报告格式）：仅返回三路证据；原句排名仅作离线对照，冲突说明仅供诊断。')));
+ if(info.assessment_error_type)panel.append(node('small',t('判断错误类型：')+info.assessment_error_type));
+ if(info.assessment_error)panel.append(node('pre',info.assessment_error));
+ const routes=[['positive',t('实施记录（正向）')],['negative',t('否定记录（负向）')]];
+ if(info.scope_query||info.strategy==='three_queue_v1')routes.push(['scope',t('范围／更正核验')]);
+ for(const [key,label] of routes){
+  panel.append(node('div',label+t('队列入选：')+fmt(info[key+'_count'])+t(' 条')));
+  if(info[key+'_query'])panel.append(node('small',label+' query：'),node('pre',info[key+'_query']));
+ }
+ for(const text of info.explanation||[])panel.append(node('h4',t('冲突说明')),node('pre',text));
+ parent.append(panel);
+}
+function renderFinalResults(parent,version){
+ const results=version.search_results;
+ parent.append(node('h4',t('最终 top-k · Search 返回内容')));
+ if(!Array.isArray(results)){
+  parent.append(node('small',t('未保存可还原的最终 top-k。可切换到全部原始候选，或查看下方回答上下文。')));
+  return;
+ }
+ sourceNote(parent,version.search_results_source==='diagnostics'?version.diagnostic_source:version.search_source);
+ parent.append(node('small',t('保留最终返回顺序、各队列前缀及打包内容。原始语义队列排名指原问题检索、重排、打包后且混排前的位置；重排排名是打包前种子排名。历史未保存的排名显示“未记录”。')));
+ const controls=node('div');controls.className='retrieval-controls';
+ const label=node('label',t('队列 ')),queue=node('select');queue.setAttribute('aria-label',version.version+t(' 最终结果队列'));
+ for(const [value,text] of [['all',t('全部队列')],...Object.entries(queueLabels)]){const option=node('option',text);option.value=value;queue.append(option)}
+ queue.value='all';label.append(queue);
+ const search=node('input');search.type='search';search.placeholder=t('搜索最终内容或 ID');search.setAttribute('aria-label',version.version+t(' 最终结果搜索'));
+ const count=node('small');controls.append(label,search,count);parent.append(controls);
+ const wrap=node('div'),table=node('table');wrap.className='scroll';table.className='final-results-table';wrap.append(table);parent.append(wrap);
+ function draw(){
+  const query=search.value.trim().toLowerCase();
+  const rows=results.filter(row=>(queue.value==='all'||row.recall_queue===queue.value)&&(!query||(String(row.id||'')+' '+String(row.content||'')).toLowerCase().includes(query)));
+  count.textContent=t('展示 ')+rows.length+' / '+results.length+t(' 条');
+  const head=node('thead'),titles=node('tr');
+  [t('最终排名'),t('队列'),t('记忆内容（最终返回）'),t('原始语义队列排名'),t('原问题重排：排名 / 得分'),t('原问题融合：排名 / 得分'),t('原问题 Dense：排名 / 得分')].forEach(text=>{const th=node('th',text);th.scope='col';titles.append(th)});
+  head.append(titles);const body=node('tbody');table.replaceChildren(head,body);
+  for(const row of rows){
+   const tr=node('tr'),queueCell=node('td'),badge=node('span',queueLabels[row.recall_queue]||queueLabels.unknown);
+   badge.className='queue-badge queue-'+(Object.hasOwn(queueLabels,row.recall_queue)?row.recall_queue:'unknown');queueCell.append(badge);
+   const content=node('td'),text=String(row.content??'');content.className='final-memory-content';
+   content.append(node('div',text.slice(0,300)+(text.length>300?'…':'')));
+   const full=node('details');full.append(node('summary',t('展开完整返回内容')),node('pre',text));content.append(full,node('small','ID '+(row.id??'—')));
+   const rankText={not_applicable:t('不适用（生成说明）'),unrecorded:t('未记录'),not_in_top_k:t('未进入原始 top-k')};
+   tr.append(node('td','#'+row.final_rank),queueCell,content,node('td',row.semantic_rank_state==='recorded'?'#'+row.semantic_rank:rankText[row.semantic_rank_state]||t('未记录')));
+   for(const name of ['reranker','fusion','dense']){
+    const channel=row.original_channels?.[name],cell=node('td');
+    cell.append(node('span',row.recall_queue==='conflict_summary'?t('不适用'):channel?.rank==null?'—':'#'+channel.rank),node('small',channel?.score==null?'—':String(channel.score)));tr.append(cell);
+   }
+   body.append(tr);
+  }
+ }
+ queue.onchange=search.oninput=draw;draw();
+}
+function renderSearchViews(parent,version){
+ renderConflictAnalysis(parent,version);
+ const controls=node('div');controls.className='retrieval-controls';
+ const finalButton=node('button',t('最终 top-k')),rawButton=node('button',t('全部原始候选'));controls.append(finalButton,rawButton);parent.append(controls);
+ const finalPanel=node('div'),rawPanel=node('div');rawPanel.hidden=true;parent.append(finalPanel,rawPanel);
+ renderFinalResults(finalPanel,version);let rawLoaded=false;
+ function showRaw(raw){
+  finalPanel.hidden=raw;rawPanel.hidden=!raw;
+  finalButton.setAttribute('aria-pressed',String(!raw));rawButton.setAttribute('aria-pressed',String(raw));
+  if(raw&&!rawLoaded){
+   rawPanel.append(node('small',t('此视图展示存储的原始记忆片段，不添加队列前缀。带前缀的实际返回文本请查看“最终 top-k”。')));
+   if(version.search_diagnostics)renderFullDiagnostics(rawPanel,version);else rawPanel.append(node('small',t('未保存原始候选诊断。')));
+   rawLoaded=true;
+  }
+ }
+ finalButton.onclick=()=>showRaw(false);rawButton.onclick=()=>showRaw(true);showRaw(false);
+}
+function renderCaseVersion(version,score){
+ const root=node('article');let card=root;card.className='case-version';card.append(node('h3',version.version));
+ card.append(node('small',(version.contract||t('未知评测口径'))+t(' · 得分 ')+fmt(score,true)));
+ const meta=version.metadata||{};card.append(node('small',t('模式 ')+(meta.mode||'—')+' · top_k '+fmt(meta.top_k)+' · answer '+(meta.answer_model||'—')+' · judge '+(meta.judge_model||'—')));
+ const input=version.input,answer=version.answer,judge=version.judge;
+ block(card,t('问题'),input?.question??input?.user_query);
+ block(card,t('参考答案'),input?.gold_answer??input?.correct_answer??judge?.gold_answer);
+ if(input?.rubric||input?.rubrics)block(card,t('评分要求'),input.rubric??input.rubrics);
+ card=node('div');card.dataset.stage='messages';root.append(card);
+ card.append(node('h4',t('原始 Messages')));
+ const original=version.original_messages;
+ sourceNote(card,original?.source);
+ if(!Array.isArray(original?.messages))card.append(node('small',original?.reason||t('未保存或不可用')));
+ else{
+  card.append(node('small',t('共 ')+original.messages.length+t(' 条，按原始顺序展示')));
+  original.messages.forEach((message,index)=>block(card,'#'+(index+1)+' · '+(message?.role||t('未标注角色')),message?.content??message));
+  rawDetails(card,t('完整原始 Messages JSON'),original.messages);
+ }
+ card=node('div');card.dataset.stage='search';root.append(card);
+ card.append(node('h4',t('Search / 检索结果')));
+ const diagnostics=node('div');diagnostics.className='case-diagnostics';
+ [[t('召回数'),input?.x_n_retrieved],[t('证据 recall'),input?.x_evidence_recall_at_k],[t('答案在上下文中'),input?.x_answer_in_context]].forEach(([label,value])=>diagnostics.append(node('span',label+'：'+(typeof value==='boolean'?(value?t('是'):t('否')):fmt(value)))));card.append(diagnostics);
+ renderSearchViews(card,version);
+ if(version.search_response!==null)rawDetails(card,t('完整 search 响应 JSON'),version.search_response);
+ block(card,t('传给回答流程的检索上下文'),input?.retrieved_context??input?.speaker_1_memories??input?.context_messages);
+ sourceNote(card,version.sources.input);
+ card=node('div');card.dataset.stage='answer';root.append(card);
+ block(card,t('Answer / 模型答案'),answer?.generated_answer??answer?.model_output,t('尚无成功答案'));sourceNote(card,version.sources.answer);
+ if(answer?.option_mapping)block(card,t('本版本选项映射'),answer.option_mapping);
+ if(answer?.correct_letter)card.append(node('small',t('正确选项：')+answer.correct_letter));
+ if(answer?.prompt)rawDetails(card,t('回答 Prompt'),answer.prompt);
+ rawDetails(card,t('完整 Answer JSON'),answer);
+ card=node('div');card.dataset.stage='judge';root.append(card);
+ card.append(node('h4',t('Judge / 评测情况')));
+ if(!judge)card.append(node('small',t('尚无评测结果；不会按零分计算。')));
+ else{
+  if(judge.label!==undefined||judge.is_correct!==undefined)card.append(node('div',t('判定：')+(judge.label??(judge.is_correct?t('正确'):t('错误')))));
+  if(judge.predicted_letter!==undefined)card.append(node('div',t('预测选项：')+judge.predicted_letter+t(' · 正确选项：')+(judge.gold_letter??'—')));
+  if(judge.predicted_answer!==undefined)block(card,t('预测选项内容'),judge.predicted_answer);
+  if(Array.isArray(judge.rubric_scores))judge.rubric_scores.forEach((item,index)=>{
+   const rubric=node('div');rubric.className='case-rubric';rubric.append(node('strong','Rubric '+(index+1)+t(' · 得分 ')+fmt(item.score)),node('pre',printable(item.rubric)),node('pre',printable(item.reason)));card.append(rubric);
+  });
+  if(judge.rubric_clbench_requirement_status)block(card,t('逐项要求是否满足'),judge.rubric_clbench_requirement_status);
+  if(judge.rubric_clbench_requirement_ratio!==undefined)card.append(node('small',t('要求满足比例：')+fmt(judge.rubric_clbench_requirement_ratio,true)+t('（与最终得分分别展示）')));
+  if(judge.judge_response!==undefined||judge.rubric_clbench_rationale!==undefined)block(card,t('Judge 理由 / 原始回复'),judge.judge_response??judge.rubric_clbench_rationale);
+ }
+ sourceNote(card,version.sources.judge);
+ rawDetails(card,t('完整 Judge JSON'),judge);
+ card=node('div');card.dataset.stage='input';root.append(card);rawDetails(card,t('完整 Replay / Input JSON'),input);sourceNote(card,version.sources.input);
+ if(version.warnings.length)root.append(node('div',version.warnings.join('\n')));
+ return root;
+}
+function applyCaseStage(){
+ $('caseDetail').querySelectorAll('[data-stage]').forEach(section=>{section.hidden=caseStage!=='all'&&section.dataset.stage!==caseStage&&!(caseStage==='outcome'&&['answer','judge'].includes(section.dataset.stage))});
+}
+async function openCase(id,dataset){
+ activeCase=id;activeDataset=dataset;const request=++detailRequest,params=caseParams();params.set('id',id);params.set('dataset',dataset);
+ const detail=$('caseDetail');detail.hidden=false;detail.replaceChildren(node('p',t('正在读取 ')+id+t(' 的过程数据…')));if(caseData)renderCases();
+ try{
+  const data=await caseFetch('/api/case',params);if(request!==detailRequest)return;
+  const header=node('div');header.className='case-detail-header';const title=node('div');title.append(node('h3',dataset+' · '+data.case.id),node('small',data.mode==='single'?t('单版本 · 得分 ')+fmt(data.case.score,true):statusNames[data.case.status]+' · '+deltaText(data.case.delta)));
+  const controls=node('div'),label=node('label',t('查看阶段 ')),select=node('select');select.setAttribute('aria-label',t('查看 case 阶段'));
+  [['outcome',t('答案与 Judge')],['messages',t('原始 Messages')],['search',t('Search / 检索')],['answer',t('Answer / 答案')],['judge',t('Judge / 评测')],['input',t('完整输入')],['all',t('全部过程')]].forEach(([value,text])=>{const option=node('option',text);option.value=value;select.append(option)});
+  select.value=caseStage;select.onchange=()=>{caseStage=select.value;applyCaseStage()};label.append(select);controls.append(label);
+  const close=node('button',t('关闭详情'));close.onclick=()=>{resetCaseDetail();renderCases()};controls.append(close);header.append(title,controls);
+  const columns=node('div');columns.className='case-columns'+(data.mode==='single'?' single':'');data.versions.forEach((version,index)=>columns.append(renderCaseVersion(version,data.mode==='single'?data.case.score:index?data.case.comparison_score:data.case.baseline_score)));
+  detail.replaceChildren(header,columns);applyCaseStage();if(activeTab==='cases')detail.scrollIntoView({behavior:'smooth',block:'start'});
+ }catch(error){if(request===detailRequest)detail.replaceChildren(node('p',t('读取详情失败：')+error.message))}
+}
+function caseSelectionChanged(){casePage=1;resetCaseDetail();$('caseList').replaceChildren();ensureDistinctVersions();initCaseDatasets();loadCases()}
+$('caseMode').onchange=()=>{updateCaseMode();caseSelectionChanged()};
+$('caseBaseline').onchange=caseSelectionChanged;$('caseComparison').onchange=caseSelectionChanged;
+$('caseDataset').onchange=()=>{casePage=1;resetCaseDetail();$('caseList').replaceChildren();loadCases()};
+$('caseCategory').onchange=()=>{casePage=1;resetCaseDetail();loadCases()};
+['caseScore','caseScoreVersion'].forEach(id=>{$(id).onchange=()=>{casePage=1;resetCaseDetail();loadCases()}});
+$('caseFilter').onchange=()=>{casePage=1;loadCases()};
+$('caseQuery').oninput=()=>{clearTimeout(queryTimer);queryTimer=setTimeout(()=>{casePage=1;loadCases()},250)};
+$('caseLoad').onclick=()=>{loadCases();if(activeCase)openCase(activeCase,activeDataset)};
+$('casePrev').onclick=()=>{casePage--;loadCases()};$('caseNext').onclick=()=>{casePage++;loadCases()};
+$('singleVersion').onchange=event=>{singleVersion=event.target.value;renderSingle()};
+$('versionQuery').oninput=renderVersionOptions;
+$('versionFilter').oninput=selectionChanged;
+$('versionAll').onclick=()=>setVisibleVersions(true);
+$('versionNone').onclick=()=>setVisibleVersions(false);
+$('refresh').onclick=refresh;setInterval(()=>{if($('auto').checked)refresh()},15000);refresh();
+</script></html>

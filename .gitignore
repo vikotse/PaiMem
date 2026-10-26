@@ -218,3 +218,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# PaiMem runtime and private configuration
+artifacts/
+data/
+models/
+.env
+.env.*
+!.env.example
+configs/*.local.toml
+agent-memory-leaderboard/
+*.db
+*.db-wal
+*.db-shm
+configs/runtime.env
+.venv-vllm/
