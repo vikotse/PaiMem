@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use PaiMem, please cite this software and the relevant upstream methods."
+title: "PaiMem: Long-Term Memory with Hybrid Retrieval and Context-Aware Evidence Selection"
+type: software
+authors:
+  - family-names: Xie
+    given-names: Weijian
+  - family-names: Shi
+    given-names: Lihui
+  - family-names: Zhang
+    given-names: Xinyue
+  - family-names: Gao
+    given-names: Xiaodong
+repository-code: "https://github.com/vikotse/PaiMem"
+url: "https://github.com/vikotse/PaiMem"
+version: "0.1.0"
+license: MIT

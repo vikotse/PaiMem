@@ -1,0 +1,364 @@
+import importlib
+import os
+import sqlite3
+import tempfile
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import httpx
+import numpy as np
+
+
+PACKAGES = ('paimem',)
+
+
+class EmbeddingTests(unittest.TestCase):
+    def test_batch_and_quota_validation(self):
+        from paimem import embeddings as module
+        for key, values in {
+            'EMBEDDING_BATCH_SIZE': ['0', '-1', '1.5', 'bad'],
+            'EMBEDDING_RPM': ['-1', '1.5', 'bad'],
+            'EMBEDDING_TPM': ['-1', '1.5', 'bad'],
+        }.items():
+            for value in values:
+                with self.subTest(key=key, value=value), patch.dict(os.environ, {key: value}, clear=True):
+                    with self.assertRaisesRegex(ValueError, key):
+                        module.RemoteEmbedder('v4', 'https://example.com/v1', 'secret')
+                    if key == 'EMBEDDING_BATCH_SIZE':
+                        with self.assertRaisesRegex(ValueError, key):
+                            module.SentenceTransformerEmbedder('unused')
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(module.RemoteEmbedder('v4', 'https://example.com/v1', 's').batch_size, 10)
+        for value, expected in [(None, 64), ('3', 3)]:
+            env = {} if value is None else {'EMBEDDING_BATCH_SIZE': value}
+            fake_model = SimpleNamespace(device='cpu', encode=lambda texts, **kw: np.ones((len(texts), 2)))
+            with patch.dict(os.environ, env, clear=True), patch.dict('sys.modules', {
+                'sentence_transformers': SimpleNamespace(SentenceTransformer=lambda *a, **kw: fake_model)
+            }), patch.object(module, 'inference_guard'):
+                model = module.SentenceTransformerEmbedder('local')
+                with patch.object(fake_model, 'encode', wraps=fake_model.encode) as encode:
+                    model.encode_documents(['a'])
+                    self.assertEqual(encode.call_args.kwargs['batch_size'], expected)
+
+    def test_remote_split_prefix_and_shared_quota(self):
+        from paimem import embeddings as module
+        clock = [0.0]
+        requests = []
+        def sleep(delay):
+            clock[0] += delay
+        def handler(request):
+            import json
+            batch = json.loads(request.content)['input']
+            requests.append((clock[0], batch))
+            return httpx.Response(200, json={'data': [
+                {'index': i, 'embedding': [i + 1, 2]} for i in range(len(batch))]})
+        real_client = httpx.Client
+        with patch.dict(os.environ, {'EMBEDDING_BATCH_SIZE': '2', 'EMBEDDING_RPM': '2',
+                                    'EMBEDDING_TPM': '6'}, clear=True), \
+                patch.object(module.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(module.time, 'sleep', side_effect=sleep), \
+                patch('httpx.Client', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)):
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's', query_prefix='q:')
+            model.encode_documents(['abc', 'de', '中', 'f'])
+            model.encode_queries(['x'])
+            self.assertEqual(requests, [(0, ['abc', 'de']), (60, ['中', 'f']), (120, ['q:x'])])
+            with self.assertRaisesRegex(ValueError, 'EMBEDDING_TPM'):
+                model.encode_documents(['ok', 'too long'])
+            with self.assertRaisesRegex(ValueError, 'EMBEDDING_TPM'):
+                model.encode_queries(['12345'])
+            self.assertEqual(len(requests), 3)
+        # TPM can split a batch even when the configured batch size allows more.
+        with patch.dict(os.environ, {'EMBEDDING_BATCH_SIZE': '10', 'EMBEDDING_TPM': '4'}, clear=True):
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
+            self.assertEqual(list(model._batches(['abc', 'de', 'f'])), [['abc'], ['de', 'f']])
+
+    def test_retry_reserves_quota_and_honors_retry_after(self):
+        from paimem import embeddings as module
+        clock = [0.0]
+        times = []
+        def sleep(delay):
+            clock[0] += delay
+        def post(*args, **kwargs):
+            times.append(clock[0])
+            if len(times) == 1:
+                return httpx.Response(429, headers={'Retry-After': '75'})
+            return httpx.Response(200, json={'data': [{'index': 0, 'embedding': [3, 4]}]})
+        with patch.dict(os.environ, {'EMBEDDING_RPM': '1'}, clear=True), \
+                patch.object(module.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(module.time, 'sleep', side_effect=sleep), patch('httpx.Client') as client:
+            client.return_value.__enter__.return_value.post.side_effect = post
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
+            model.encode_documents(['x'])
+            model.encode_queries(['y'])
+        self.assertEqual(times, [0, 75, 135])
+        from email.utils import formatdate
+        with patch.object(module.time, 'time', return_value=1000):
+            self.assertEqual(module._retry_after(formatdate(1020, usegmt=True)), 20)
+        for value in [None, 'bad', 'NaN', 'inf', '-1']:
+            self.assertEqual(module._retry_after(value), 0)
+
+    def test_rolling_window_and_concurrent_reservations(self):
+        from paimem import embeddings as module
+        from concurrent.futures import ThreadPoolExecutor
+        clock = [0.0]
+        def sleep(delay):
+            clock[0] += delay
+        with patch.object(module.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(module.time, 'sleep', side_effect=sleep):
+            limiter = module._RateLimiter(2, 0)
+            limiter.acquire(2)
+            clock[0] = 10
+            limiter.acquire(2)
+            clock[0] = 20
+            limiter.acquire(2)
+            self.assertEqual(clock[0], 60)
+            limiter.acquire(2)
+            self.assertEqual(clock[0], 70)
+        # All workers reserve in one window; no increments can be lost.
+        with patch.object(module.time, 'monotonic', return_value=0):
+            limiter = module._RateLimiter(100, 200)
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                list(pool.map(limiter.acquire, [2] * 100))
+            self.assertEqual(len(limiter._events), 100)
+            self.assertEqual(limiter._tokens, 200)
+
+
+    def test_local_default_and_explicit_remote_settings(self):
+        for package in PACKAGES:
+            module = importlib.import_module(package + '.embeddings')
+            with self.subTest(package=package), patch.object(module, 'SentenceTransformerEmbedder') as local:
+                module.build_embedder()
+                local.assert_called_once_with(model_name='BAAI/bge-small-en-v1.5', device=None, query_prefix=None)
+                local.reset_mock()
+                model = module.build_embedder('text-embedding-v4', backend='remote',
+                                             base_url='https://example.com/v1/', api_key='secret')
+                local.assert_not_called()
+                self.assertEqual(model.query_prefix, '')
+                self.assertNotIn('secret', model.identity)
+                rotated = module.build_embedder('text-embedding-v4', backend='remote',
+                                               base_url='https://example.com/v1', api_key='rotated')
+                self.assertEqual(model.identity, rotated.identity)
+
+    def test_invalid_configuration(self):
+        for package in PACKAGES:
+            module = importlib.import_module(package + '.embeddings')
+            for field in ('model_name', 'base_url', 'api_key'):
+                kwargs = dict(model_name='text-embedding-v4', backend='remote',
+                              base_url='https://example.com/v1', api_key='secret')
+                kwargs[field] = ''
+                with self.subTest(package=package, field=field), self.assertRaises(ValueError):
+                    module.build_embedder(**kwargs)
+            for url in ('file:///tmp/api', 'https://user:secret@example.com/v1',
+                        'https://example.com/v1?key=secret', 'https://example.com/v1/embeddings'):
+                with self.assertRaises(ValueError):
+                    module.build_embedder('v4', backend='remote', base_url=url, api_key='secret')
+            with self.assertRaises(ValueError):
+                module.build_embedder('v4', backend='typo')
+
+    def test_batch_order_normalization_query_and_empty_input(self):
+        for package in PACKAGES:
+            module = importlib.import_module(package + '.embeddings')
+            requests = []
+            def handler(request):
+                import json
+                body = json.loads(request.content)
+                requests.append(body)
+                self.assertEqual(request.url.path, '/v1/embeddings')
+                self.assertEqual(request.headers['Authorization'], 'Bearer secret')
+                self.assertEqual(body['model'], 'text-embedding-v4')
+                return httpx.Response(200, json={'data': [
+                    {'index': i, 'embedding': [float(text.removeprefix('query:')) + 1, 2]}
+                    for i, text in reversed(list(enumerate(body['input'])))
+                ]})
+            real_client = httpx.Client
+            with self.subTest(package=package), patch('httpx.Client', side_effect=lambda **kw: real_client(
+                    transport=httpx.MockTransport(handler), **kw)):
+                model = module.build_embedder('text-embedding-v4', backend='remote',
+                                             base_url='https://example.com/v1', api_key='secret', query_prefix='query:')
+                self.assertEqual(model.encode_documents([]).shape, (0, 0))
+                matrix = model.encode_documents([str(i) for i in range(23)])
+                self.assertEqual([len(r['input']) for r in requests], [10, 10, 3])
+                self.assertEqual(matrix.dtype, np.float32)
+                expected = np.array([[i + 1, 2] for i in range(23)], dtype=np.float32)
+                expected /= np.linalg.norm(expected, axis=1, keepdims=True)
+                np.testing.assert_allclose(matrix, expected, rtol=1e-6)
+                model.encode_queries(['1'])
+                self.assertEqual(requests[-1]['input'], ['query:1'])
+                self.assertEqual(model.encode_documents([]).shape, (0, 2))
+
+    def test_bad_responses_and_errors_are_sanitized(self):
+        for package in PACKAGES:
+            module = importlib.import_module(package + '.embeddings')
+            responses = [
+                httpx.Response(401, text='secret'),
+                httpx.Response(200, text='not json secret'),
+                httpx.Response(200, json={'data': []}),
+                httpx.Response(200, json={'data': [{'index': 1, 'embedding': [1, 2]}]}),
+                httpx.Response(200, json={'data': [{'index': 0, 'embedding': [0, 0]}]}),
+                httpx.Response(200, json={'data': [{'index': 0, 'embedding': ['NaN', 1]}]}),
+                httpx.Response(200, json={'data': [{'index': 0, 'embedding': [1, 2]},
+                                                   {'index': 0, 'embedding': [1, 2]}]}),
+            ]
+            for response in responses:
+                with patch('httpx.Client') as client:
+                    client.return_value.__enter__.return_value.post.return_value = response
+                    model = module.build_embedder('v4', backend='remote', base_url='https://example.com/v1', api_key='secret')
+                    with self.assertRaises((RuntimeError, ValueError)) as caught:
+                        model.encode_documents(['text'])
+                    self.assertNotIn('secret', str(caught.exception))
+                    self.assertEqual(client.return_value.__enter__.return_value.post.call_count, 1)
+            with patch('httpx.Client') as client, patch.object(module.time, 'sleep'):
+                post = client.return_value.__enter__.return_value.post
+                post.side_effect = httpx.ReadTimeout('secret')
+                with self.assertRaisesRegex(RuntimeError, 'ReadTimeout') as caught:
+                    model.encode_queries(['text'])
+                self.assertNotIn('secret', str(caught.exception))
+                post.side_effect = None
+                post.return_value = httpx.Response(200, json={'data': [{'index': 0, 'embedding': [1, 2]}]})
+                model.encode_documents(['text'])
+                post.return_value = httpx.Response(200, json={'data': [{'index': 0, 'embedding': [1, 2, 3]}]})
+                with self.assertRaises(ValueError):
+                    model.encode_queries(['text'])
+
+    def test_transient_failure_retries_only_failed_batch(self):
+        for package in PACKAGES:
+            module = importlib.import_module(package + '.embeddings')
+            for failure in (httpx.ConnectError('secret'), httpx.ReadTimeout('secret'),
+                            httpx.RemoteProtocolError('secret'), 429, 502, 503, 504):
+                with self.subTest(package=package, failure=type(failure).__name__ if isinstance(failure, Exception) else failure), \
+                        patch('httpx.Client') as client, patch.object(module.time, 'sleep') as sleep, \
+                        self.assertLogs(module.__name__, level='WARNING') as logs:
+                    post = client.return_value.__enter__.return_value.post
+                    first = httpx.Response(200, json={'data': [
+                        {'index': i, 'embedding': [3, 4]} for i in range(10)]})
+                    last = httpx.Response(200, json={'data': [{'index': 0, 'embedding': [4, 3]}]})
+                    post.side_effect = [first, failure if isinstance(failure, Exception) else httpx.Response(failure, text='secret'), last]
+                    model = module.build_embedder('v4', backend='remote', base_url='https://example.com/v1', api_key='secret')
+                    result = model.encode_documents([str(i) for i in range(11)])
+                    self.assertEqual([call.kwargs['json']['input'] for call in post.call_args_list],
+                                     [[str(i) for i in range(10)], ['10'], ['10']])
+                    np.testing.assert_allclose(result[:10], np.tile([0.6, 0.8], (10, 1)), rtol=1e-6)
+                    np.testing.assert_allclose(result[-1], [0.8, 0.6], rtol=1e-6)
+                    sleep.assert_called_once_with(1.0)
+                    self.assertIn('batch=2', logs.output[0])
+                    self.assertNotIn('secret', ' '.join(logs.output))
+
+    def test_retry_exhaustion_and_nonretryable_failures(self):
+        for package in PACKAGES:
+            module = importlib.import_module(package + '.embeddings')
+            for failure, attempts in ((httpx.ConnectTimeout('secret'), 3), (503, 3),
+                                      (httpx.UnsupportedProtocol('secret'), 1), (400, 1), (401, 1), (403, 1)):
+                with self.subTest(package=package, attempts=attempts), patch('httpx.Client') as client, \
+                        patch.object(module.time, 'sleep') as sleep, self.assertLogs(module.__name__) as logs:
+                    post = client.return_value.__enter__.return_value.post
+                    if isinstance(failure, Exception):
+                        post.side_effect = failure
+                    else:
+                        post.return_value = httpx.Response(failure, text='secret')
+                    model = module.build_embedder('v4', backend='remote', base_url='https://example.com/v1', api_key='secret')
+                    with self.assertRaisesRegex(RuntimeError, f'attempts={attempts}') as caught:
+                        model.encode_queries(['private input'])
+                    self.assertEqual(post.call_count, attempts)
+                    self.assertEqual([call.args[0] for call in sleep.call_args_list], [1.0, 2.0] if attempts == 3 else [])
+                    diagnostic = str(caught.exception) + ' '.join(logs.output)
+                    self.assertNotIn('secret', diagnostic)
+                    self.assertNotIn('private input', diagnostic)
+                    expected = type(failure).__name__ if isinstance(failure, Exception) else f'HTTP {failure}'
+                    self.assertIn(expected, diagnostic)
+
+    def test_api_environment_and_overrides(self):
+        env = {'EMBEDDING_BACKEND': 'remote', 'EMBEDDING_MODEL': 'text-embedding-v4',
+               'EMBEDDING_BASE_URL': 'https://example.com/v1', 'EMBEDDING_API_KEY': 'secret'}
+        for package in PACKAGES:
+            api = importlib.import_module(package + '.api')
+            with self.subTest(package=package), patch.dict(os.environ, env, clear=True), \
+                    patch.dict(api.STORE_INIT_OVERRIDES, {}, clear=True), \
+                    patch.object(api, 'build_embedder') as build, patch.object(api, 'SQLiteMemoryStore'):
+                api.get_store.cache_clear()
+                try:
+                    api.get_store()
+                    self.assertEqual(build.call_args.args[0], 'text-embedding-v4')
+                    self.assertEqual(build.call_args.kwargs, dict(backend='remote', base_url=env['EMBEDDING_BASE_URL'], api_key='secret'))
+                    api.get_store.cache_clear()
+                    api.configure_store(embedding_backend='local', embedding_model='/local/bge', embedding_api_key='other')
+                    api.get_store()
+                    self.assertEqual(build.call_args.args[0], '/local/bge')
+                    self.assertEqual(build.call_args.kwargs['backend'], 'local')
+                finally:
+                    api.get_store.cache_clear()
+
+    def test_cli_identity_and_environment(self):
+        for package in PACKAGES:
+            cli = importlib.import_module(package + '.cli')
+            with patch.dict(os.environ, {'EMBEDDING_MODEL': 'v4', 'EMBEDDING_BACKEND': 'remote'}, clear=True):
+                self.assertEqual(cli.parser().parse_args(['index', '--documents', 'd', '--output', 'o']).embedding_model, 'v4')
+                self.assertEqual(cli.parser().parse_args(['index', '--documents', 'd', '--output', 'o', '--embedding-model', 'override']).embedding_model, 'override')
+            index = SimpleNamespace(metadata={'embedding_model': 'v4', 'embedding_backend': 'remote', 'embedding_identity': 'saved'})
+            with patch.dict(os.environ, {}, clear=True), patch.object(cli.FaissChunkIndex, 'load', return_value=index), \
+                    patch.object(cli, 'build_embedder', return_value=SimpleNamespace(identity='saved')) as build:
+                cli.load_rag('index', None, None, 'none', '')
+                self.assertEqual(build.call_args.kwargs['backend'], 'remote')
+                build.return_value.identity = 'different'
+                with self.assertRaisesRegex(ValueError, 'does not match'):
+                    cli.load_rag('index', None, None, 'none', '')
+                index.metadata.pop('embedding_identity')
+                with self.assertRaisesRegex(ValueError, 'Legacy index'):
+                    cli.load_rag('index', None, None, 'none', '')
+
+    def test_sqlite_model_switch_requires_empty_memories_and_requests(self):
+        class StaticEmbedder:
+            def __init__(self, identity, dimension):
+                self.identity = identity
+                self.dimension = dimension
+
+            def encode_documents(self, texts):
+                return np.full((len(texts), self.dimension), 1 / np.sqrt(self.dimension), dtype=np.float32)
+
+            encode_queries = encode_documents
+
+        for package in PACKAGES:
+            module = importlib.import_module(package + '.memory_store')
+            for state in ('empty', 'populated', 'requests_only', 'memories_only', 'cleared'):
+                with self.subTest(package=package, state=state), tempfile.TemporaryDirectory() as directory:
+                    path = directory + '/memory.db'
+                    first = StaticEmbedder('local-bge', 2)
+                    second = StaticEmbedder('remote-v4', 3)
+                    store = module.SQLiteMemoryStore(path, first)
+                    if state != 'empty':
+                        store.add('r1', 'u1', 's1', [module.MemoryMessage('user', 'Remember Paris')])
+                    if state == 'cleared':
+                        store.clear()
+                    elif state in ('requests_only', 'memories_only'):
+                        # Construct partial cleanup states to test both guards independently.
+                        with sqlite3.connect(path) as connection:
+                            table = 'memories' if state == 'requests_only' else 'add_requests'
+                            connection.execute('DELETE FROM ' + table)
+                    with sqlite3.connect(path) as connection:
+                        before = tuple(connection.execute(
+                            'SELECT (SELECT COUNT(*) FROM memories), (SELECT COUNT(*) FROM add_requests)'
+                        ).fetchone())
+                    if state in ('empty', 'cleared'):
+                        switched = module.SQLiteMemoryStore(path, second)
+                        switched.add('r2', 'u1', 's1', [module.MemoryMessage('user', 'Remember London')])
+                        restarted = module.SQLiteMemoryStore(path, second)
+                        self.assertTrue(restarted.search('u1', 'London', 1))
+                        expected_identity = second.identity
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'embedding model does not match'):
+                            module.SQLiteMemoryStore(path, second)
+                        expected_identity = first.identity
+                    with sqlite3.connect(path) as connection:
+                        identity = connection.execute(
+                            "SELECT value FROM store_metadata WHERE key = 'embedding_identity'"
+                        ).fetchone()[0]
+                        self.assertEqual(identity, expected_identity)
+                        if state not in ('empty', 'cleared'):
+                            after = tuple(connection.execute(
+                                'SELECT (SELECT COUNT(*) FROM memories), (SELECT COUNT(*) FROM add_requests)'
+                            ).fetchone())
+                            self.assertEqual(after, before)
+
+
+if __name__ == '__main__':
+    unittest.main()
