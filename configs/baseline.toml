@@ -175,7 +175,7 @@ cuda_visible_devices = "0"
 # Server listening address / 服务端监听地址 (VLLM_HOST)
 # Open bind address / 开放监听地址: "127.0.0.1" = loopback only / 仅本机；
 # "0.0.0.0" = all IPv4 interfaces / 所有 IPv4 网卡；or an available local IP / 也可填写本机指定 IP。
-host = "127.0.0.1"
+host = "0.0.0.0"
 # Server port; update base_url too / 服务端口，同时修改 base_url (VLLM_PORT)
 port = 8089
 # vLLM 0.32.0 options / 可填写值: "auto", "half", "float16", "bfloat16", "float", "float32".
