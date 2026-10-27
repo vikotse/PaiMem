@@ -141,7 +141,7 @@ base_url = "http://127.0.0.1:8089"
 # Shared client/server key; empty explicitly disables auth / 服务端与客户端共用；空值明确关闭鉴权 (MEMORY_RERANKER_API_KEY)
 api_key = "REPLACE_WITH_RERANKER_API_KEY"
 # Client request timeout in seconds / 客户端超时，秒 (MEMORY_RERANKER_TIMEOUT)
-timeout = 120
+timeout = 900
 # Documents per vLLM /score request / 每次 vLLM /score 请求的文档条数 (MEMORY_RERANKER_BATCH_SIZE)
 batch_size = 16
 # Isolated Python environment / 独立 Python 环境 (VLLM_ENV)
