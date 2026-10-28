@@ -20,7 +20,7 @@
 
 复制 `configs/default.toml` 为 `configs/config.local.toml`，设置 `[reranker]` 的 `enabled=true`、`backend="vllm"`。`[reranker.vllm]` 已给出模型仓库/目录、服务名、独立环境、Python/vLLM 版本、模板 URL、GPU 与监听参数。设置 `deployment="local"`，替换 `api_key`；或明确清空以关闭 API key 鉴权。保持 `base_url` 与 `host`/`port` 一致。
 
-模板和分类转换专用于 [Qwen3 评分](https://docs.vllm.ai/en/v0.32.0/examples/pooling/score/) 及 [MemReranker](https://huggingface.co/IAAR-Shanghai/MemReranker-4B)。更换模型系列或 vLLM 版本时需重新核对。`download=false` 使用已有模型目录，非空的已有模板会直接复用。
+模板和分类转换专用于 [Qwen3 评分](https://docs.vllm.ai/en/v0.32.0/examples/pooling/score/) 及 [MemReranker](https://huggingface.co/IAAR-Shanghai/MemReranker-4B)。更换模型系列或 vLLM 版本时需重新核对。`download=false` 使用已有模型目录，非空的已有模板会直接复用。默认模板已随仓库保存在 `third_party/vllm/qwen3_reranker.jinja`，安装时自动复制到 `chat_template` 指定的路径，无需访问 GitHub；现有配置无需修改。只有 `chat_template_url` 改为其他 URL 时才联网下载。同步代码时请包含 `third_party/vllm` 目录。模板来源与许可见[第三方说明](../THIRD_PARTY_NOTICES.zh-CN.md)。
 
 ```bash
 bash scripts/setup_env.sh --only vllm

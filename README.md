@@ -52,7 +52,7 @@ If your provider uses a different model name, update `embedding.remote.model` (t
 > The compatibility check also tracks the embedding backend, remote `base_url`, local model path, query prefix, and ingestion context (`context.messages`). Changes to these fields can block reuse of a populated database. It cannot detect changed weights behind an unchanged model name or path.
 
 ```bash
-# Install/check uv, install dependencies, and download the selected reranker and template.
+# Install/check uv and dependencies; prepare local embedding/reranker models and templates as configured.
 bash scripts/setup_env.sh
 # Terminal 1: start vLLM and leave it running; wait until it is ready.
 bash scripts/start_vllm.sh
@@ -65,6 +65,22 @@ bash start_svr.sh
 ```
 
 **To connect to an existing vLLM reranking service**, set `reranker.vllm.deployment` to `"remote"` and enter its `base_url`, served model name (`model`), and `api_key` (use `""` if authentication is disabled). Here, `"remote"` means using an already running service, whether on this machine or another machine. Run `setup_env.sh`, then `start_svr.sh`. You do not need to download the reranker model, install vLLM, or run `start_vllm.sh`.
+
+To prepare only one environment, use `--only`:
+
+```bash
+bash scripts/setup_env.sh --only service
+bash scripts/setup_env.sh --only vllm
+```
+
+If downloads are slow, configure mirrors before running setup, for example:
+
+```bash
+export UV_DEFAULT_INDEX="https://pypi.tuna.tsinghua.edu.cn/simple"
+export HF_ENDPOINT="https://hf-mirror.com"
+```
+
+These set the Python package index and model download endpoint, respectively; they do not override fixed download URLs in the lockfile or download sources for uv, Python or templates.
 
 No manual environment activation is needed. PaiMem uses `.venv`; vLLM uses a separate environment. Finish model preparation and wait for vLLM readiness before starting PaiMem. `--check` validates configuration and checks existing database compatibility read-only, without loading models or calling remote services. Normal startup performs the same check before model loading.
 

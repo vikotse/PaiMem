@@ -54,7 +54,7 @@ cp -n configs/default.toml configs/config.local.toml
 > 兼容性检查还记录 embedding 后端、远程 `base_url`、本地模型路径、query prefix 及入库上下文配置（`context.messages`）；修改这些字段可能阻止复用非空数据库。检查无法识别模型名或路径不变时的权重变化。
 
 ```bash
-# 安装/检查 uv、安装依赖，并下载所选重排模型及模板。
+# 安装/检查 uv、安装依赖，并按配置准备本地 embedding、重排模型及所需模板。
 bash scripts/setup_env.sh
 # 终端 1：启动 vLLM，保持运行并等待模型就绪。
 bash scripts/start_vllm.sh
@@ -67,6 +67,22 @@ bash start_svr.sh
 ```
 
 **连接已启动的 vLLM 重排服务时**，将 `reranker.vllm.deployment` 设置为 `"remote"`，并填写该服务的地址 `base_url`、服务模型名 `model` 和密钥 `api_key`（未启用 API key 鉴权则填 `""`）。这里的 `"remote"` 表示“使用已有服务”，该服务可以在本机，也可以在另一台机器。随后执行环境准备脚本 `setup_env.sh` 和 PaiMem 启动脚本 `start_svr.sh` 即可，无需下载重排模型、安装 vLLM 或运行 `start_vllm.sh`。
+
+如果仅需准备单项环境，可以使用 `--only`：
+
+```bash
+bash scripts/setup_env.sh --only service
+bash scripts/setup_env.sh --only vllm
+```
+
+如果下载速度慢，可在运行准备命令前配置镜像源，例如：
+
+```bash
+export UV_DEFAULT_INDEX="https://pypi.tuna.tsinghua.edu.cn/simple"
+export HF_ENDPOINT="https://hf-mirror.com"
+```
+
+两者分别用于 Python 包索引和模型下载，不覆盖锁文件中的固定下载地址或 uv、Python、模板的下载来源。
 
 无需手动激活环境。PaiMem 安装到 `.venv`，vLLM 使用独立环境；模型准备完成且 vLLM 就绪后再启动 PaiMem。`--check` 校验配置，并只读检查已有数据库的兼容性，不加载模型或请求远端；正常启动也会在加载模型前执行相同检查。
 
