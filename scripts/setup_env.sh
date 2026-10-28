@@ -138,14 +138,30 @@ prepare_chat_template() (
   fi
 
   paimem_require RERANKER_CHAT_TEMPLATE_URL
-  command -v curl >/dev/null 2>&1 || paimem_fail 'Install curl first / 请先安装 curl'
   mkdir -p "$(dirname "$RERANKER_CHAT_TEMPLATE")"
 
-  # Publish the template only after a successful, nonempty download.
+  # Match the exact pinned source, so custom URLs never receive a different template.
+  bundled_template='third_party/vllm/qwen3_reranker.jinja'
+  bundled_url='https://raw.githubusercontent.com/vllm-project/vllm/v0.32.0/examples/pooling/score/template/qwen3_reranker.jinja'
+  # Publish only a complete, nonempty copy/download.
   template_tmp=$(mktemp "${RERANKER_CHAT_TEMPLATE}.XXXXXX")
   trap 'rm -f "$template_tmp"' EXIT
-  curl --fail --silent --show-error --location "$RERANKER_CHAT_TEMPLATE_URL" -o "$template_tmp"
-  [[ -s "$template_tmp" ]] || paimem_fail 'Downloaded template is empty / 下载的模板为空'
+  if [[ "$RERANKER_CHAT_TEMPLATE_URL" == "$bundled_url" ]]; then
+    [[ -s "$bundled_template" ]] || paimem_fail 'Bundled template is missing; sync third_party/vllm from the repository / 内置模板缺失，请同步仓库的 third_party/vllm 目录'
+    printf 'Using bundled reranker chat template / 使用仓库内置重排评分模板\n'
+    cp "$bundled_template" "$template_tmp"
+  else
+    command -v curl >/dev/null 2>&1 || paimem_fail 'Install curl first / 请先安装 curl'
+    printf 'Downloading custom reranker chat template / 正在下载自定义重排评分模板\n'
+    # Include TLS/reset failures in retries; keep each attempt bounded.
+    if ! curl --fail --silent --show-error --location \
+      --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
+      "$RERANKER_CHAT_TEMPLATE_URL" -o "$template_tmp"; then
+      printf 'Template destination / 模板目标路径: %s\n' "$RERANKER_CHAT_TEMPLATE" >&2
+      paimem_fail 'Chat template download failed. Dependencies and model preparation already completed. Retry setup, or download the configured chat_template_url on another machine and copy it to the path above, then rerun setup. / 评分模板下载失败，依赖和模型准备已完成。可重试，或在其他机器下载配置中的 chat_template_url 并上传至上述路径，再重新运行。'
+    fi
+  fi
+  [[ -s "$template_tmp" ]] || paimem_fail 'Prepared template is empty / 准备的模板为空'
   mv "$template_tmp" "$RERANKER_CHAT_TEMPLATE"
   trap - EXIT
 )

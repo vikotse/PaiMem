@@ -1,0 +1,6 @@
+Qwen3 reranker chat template
+Upstream: vLLM project, tag v0.32.0
+Source: https://raw.githubusercontent.com/vllm-project/vllm/v0.32.0/examples/pooling/score/template/qwen3_reranker.jinja
+License: Apache-2.0; see ../licenses/vLLM-Apache-2.0.txt
+Modifications: none (including whitespace)
+SHA-256: e1ee98e69aab7b2da366edf1c50efcef37e34b4a0c50fb816336213e68d9047a

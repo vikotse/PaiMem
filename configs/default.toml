@@ -167,7 +167,8 @@ download = true
 revision = "main"
 # Local template destination / 本地模板目标路径 (RERANKER_CHAT_TEMPLATE)
 chat_template = "models/templates/qwen3_reranker.jinja"
-# Downloaded only if absent/empty; Qwen3-specific / 缺失或空文件时下载，仅适用 Qwen3 (RERANKER_CHAT_TEMPLATE_URL)
+# Source identity: the exact URL below uses the bundled v0.32.0 template offline; custom URLs download if absent/empty.
+# 来源标识：以下固定 URL 使用仓库内置模板，无须联网；自定义 URL 在目标缺失或为空时下载。 (RERANKER_CHAT_TEMPLATE_URL)
 chat_template_url = "https://raw.githubusercontent.com/vllm-project/vllm/v0.32.0/examples/pooling/score/template/qwen3_reranker.jinja"
 # Visible GPU IDs / 可见 GPU 编号 (CUDA_VISIBLE_DEVICES)
 # Open GPU list / 开放 GPU 列表: "0" = GPU 0；"0,1" = GPUs 0 and 1 / 使用 GPU 0 和 1；

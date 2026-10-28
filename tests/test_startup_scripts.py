@@ -16,10 +16,10 @@ class StartupScriptTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix='paimem scripts ')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        for name in ('scripts', 'configs', 'src/paimem', 'fake-bin'):
+        for name in ('scripts', 'configs', 'src/paimem', 'fake-bin', 'third_party/vllm'):
             (self.root / name).mkdir(parents=True)
         for name in ('scripts/config.sh', 'scripts/setup_env.sh', 'scripts/start_vllm.sh',
-                     'start_svr.sh', 'configs/default.toml',
+                     'start_svr.sh', 'configs/default.toml', 'third_party/vllm/qwen3_reranker.jinja',
                      'configs/baseline.toml', 'src/paimem/launcher.py', 'src/paimem/database_check.py', 'src/paimem/configuration.py', 'src/paimem/long_question.py'):
             shutil.copyfile(ROOT / name, self.root / name)
         (self.root / 'src/paimem/__init__.py').write_text('')
@@ -170,6 +170,49 @@ else:
         self.run_script('scripts/setup_env.sh', '--only', 'vllm')
         self.assertFalse(any('sync' in c for c in self.commands()))
         self.assertEqual(len([c for c in self.commands() if 'download' in c]), 1)
+
+    def test_template_failure_cleans_partial_download_and_allows_offline_recovery(self):
+        self.write_settings(VLLM_DEPLOYMENT='local', RERANKER_REPO_ID='org/reranker',
+                            RERANKER_MODEL_PATH='models/reranker',
+                            RERANKER_CHAT_TEMPLATE='models/template.jinja',
+                            RERANKER_CHAT_TEMPLATE_URL='https://example.com/template')
+        self.install_mock('curl', '''
+assert '--retry-all-errors' in sys.argv
+assert '--connect-timeout' in sys.argv
+assert '--max-time' in sys.argv
+pathlib.Path(sys.argv[sys.argv.index('-o') + 1]).write_text('partial template')
+raise SystemExit(35)
+''')
+        result = self.run_script('scripts/setup_env.sh', '--only', 'vllm', ok=False)
+        self.assertIn('Chat template download failed', result.stderr)
+        self.assertIn('models/template.jinja', result.stderr)
+        self.assertFalse(list((self.root / 'models').glob('template.jinja*')))
+        self.assertTrue((self.root / 'models/reranker/config.json').exists())
+        (self.root / 'models/template.jinja').write_text('offline template')
+        self.run_script('scripts/setup_env.sh', '--only', 'vllm')
+
+    def test_default_template_is_prepared_offline_and_existing_template_is_preserved(self):
+        self.write_settings(VLLM_DEPLOYMENT='local', RERANKER_REPO_ID='org/reranker')
+        self.install_mock('curl', "raise SystemExit('Network must not be used for the bundled template')")
+        result = self.run_script('scripts/setup_env.sh', '--only', 'vllm')
+        self.assertIn('Using bundled', result.stdout)
+        template = self.root / 'models/templates/qwen3_reranker.jinja'
+        bundled = self.root / 'third_party/vllm/qwen3_reranker.jinja'
+        self.assertEqual(template.read_bytes(), bundled.read_bytes())
+        import hashlib
+        self.assertEqual(hashlib.sha256(bundled.read_bytes()).hexdigest(),
+                         'e1ee98e69aab7b2da366edf1c50efcef37e34b4a0c50fb816336213e68d9047a')
+        template.write_text('user customization')
+        self.run_script('scripts/setup_env.sh', '--only', 'vllm')
+        self.assertEqual(template.read_text(), 'user customization')
+
+    def test_missing_bundled_template_fails_without_network_or_partial_file(self):
+        self.write_settings(VLLM_DEPLOYMENT='local', RERANKER_REPO_ID='org/reranker')
+        (self.root / 'third_party/vllm/qwen3_reranker.jinja').unlink()
+        result = self.run_script('scripts/setup_env.sh', '--only', 'vllm', ok=False)
+        self.assertIn('Bundled template is missing', result.stderr)
+        self.assertFalse(any(c[0] == 'curl' for c in self.commands()))
+        self.assertFalse(list((self.root / 'models/templates').iterdir()))
 
     def test_export_precedence_empty_values_and_missing_file(self):
         self.run_script('scripts/setup_env.sh')

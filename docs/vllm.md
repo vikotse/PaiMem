@@ -20,7 +20,7 @@ This workflow serves MemReranker/Qwen3 on a compatible Linux NVIDIA GPU host. Co
 
 Copy `configs/default.toml` to `configs/config.local.toml`. Set `[reranker] enabled=true, backend="vllm"`. In `[reranker.vllm]`, the template already provides model repository/directory, served name, separate environment, Python/vLLM versions, template URL, GPU and listener parameters. Set `deployment="local"` and replace `api_key`, or explicitly clear it to disable API-key authentication. Keep `base_url` consistent with `host`/`port`.
 
-The supplied conversion and versioned template are specific to [Qwen3 scoring](https://docs.vllm.ai/en/v0.32.0/examples/pooling/score/) and [MemReranker](https://huggingface.co/IAAR-Shanghai/MemReranker-4B). Review them when changing model families or vLLM versions. `download=false` uses an existing model directory; an existing nonempty template is reused.
+The supplied conversion and versioned template are specific to [Qwen3 scoring](https://docs.vllm.ai/en/v0.32.0/examples/pooling/score/) and [MemReranker](https://huggingface.co/IAAR-Shanghai/MemReranker-4B). Review them when changing model families or vLLM versions. `download=false` uses an existing model directory; an existing nonempty template is reused. The default template is bundled at `third_party/vllm/qwen3_reranker.jinja` and copied to the configured `chat_template` path without contacting GitHub. Existing configurations need no changes. Only a different `chat_template_url` triggers a download. Include `third_party/vllm` when syncing the repository. See [third-party notices](../THIRD_PARTY_NOTICES.md) for provenance and licensing.
 
 ```bash
 bash scripts/setup_env.sh --only vllm

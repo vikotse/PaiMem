@@ -233,3 +233,6 @@ agent-memory-leaderboard/
 *.db-shm
 configs/runtime.env
 .venv-vllm/
+
+# Personal operational notes
+/local-notes/

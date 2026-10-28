@@ -28,3 +28,9 @@ Omit `--api-key-env` if authentication is disabled. When both backends use the s
 Outputs are `.json` and `.csv`, containing configuration-level timings and available memory metrics. The script measures sequential full-pool calls. `candidate count / mean time` is the processing rate for that workload, not the limit of concurrent serving. HTTP timing includes networking, queueing, and serialization. Local timing includes tokenization, batching, and score transfer. Both exclude model loading and warmup.
 
 Record the GPU, driver, software versions, model revisions, dtype, templates, candidate count, token lengths, and batch size. In this benchmark, `--max-lengths` controls only the local path; configure the remote service separately and ensure inputs fit. If models or scoring templates differ, describe the result as a deployment-configuration comparison, not a vLLM speedup. A BGE-versus-MemReranker comparison cannot isolate backend acceleration.
+
+## Concurrent vLLM capacity testing
+
+Use `scripts/benchmark_vllm_capacity.py` to measure `/score` service capacity against an existing endpoint or a local Linux server started with `--launch-config`. Run `--help` for options and `--dry-run` to inspect the test matrix first.
+
+The script writes JSON/CSV reports and selects configurations meeting error-rate, latency and sample-count constraints. It uses closed-loop requests and includes drain time. Results represent reranker service capacity, not PaiMem `/search` end-to-end performance; within-query batch concurrency greater than 1 requires changes to the existing client.
