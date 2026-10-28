@@ -7,6 +7,7 @@ source scripts/config.sh
 
 # Shared workflow state, set by argument parsing and backend selection.
 only=all
+package_source=auto
 prepare_vllm=false
 
 parse_arguments() {
@@ -17,13 +18,18 @@ parse_arguments() {
         only="$2"
         shift 2
         ;;
+      --source)
+        [[ $# -ge 2 ]] || paimem_fail "--source needs auto, pypi or aliyun"
+        package_source="$2"
+        shift 2
+        ;;
       --config)
         [[ $# -ge 2 ]] || paimem_fail '--config needs a TOML path'
         PAIMEM_CONFIG="$2"
         shift 2
         ;;
       -h|--help)
-        echo 'Usage: bash scripts/setup_env.sh [--only all|service|vllm] [--config PATH]'
+        echo 'Usage: bash scripts/setup_env.sh [--only all|service|vllm] [--config PATH] [--source auto|pypi|aliyun]'
         exit 0
         ;;
       *)
@@ -31,6 +37,11 @@ parse_arguments() {
         ;;
     esac
   done
+
+  case "$package_source" in
+    auto|pypi|aliyun) ;;
+    *) paimem_fail "--source must be auto, pypi or aliyun" ;;
+  esac
 
   case "$only" in
     all|service|vllm) ;;
@@ -58,7 +69,9 @@ install_service_environment() {
   [[ -f "$PAIMEM_CONFIG" ]] || paimem_fail 'Strategy TOML does not exist / 策略配置不存在'
 
   uv python install "${PAIMEM_PYTHON:-3.11}"
-  UV_PROJECT_ENVIRONMENT="$PWD/.venv" uv sync --python "${PAIMEM_PYTHON:-3.11}" --frozen
+  local setup_python
+  setup_python=$(uv python find 3.11 --no-python-downloads)
+  "$setup_python" scripts/select_package_source.py --source "$package_source" --python "${PAIMEM_PYTHON:-3.11}"
   uv pip check --python "$PWD/.venv/bin/python"
 
   # Use the launcher's validation without loading models or calling APIs.

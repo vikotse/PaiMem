@@ -236,3 +236,9 @@ configs/runtime.env
 
 # Personal operational notes
 /local-notes/
+
+# Package-source setup recovery and temporary files
+/.uv.lock.setup-backup
+/.uv.lock.setup-backup.*
+/uv.lock.*
+/uv.aliyun.lock.*
