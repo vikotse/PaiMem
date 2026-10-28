@@ -18,7 +18,7 @@ class StartupScriptTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         for name in ('scripts', 'configs', 'src/paimem', 'fake-bin', 'third_party/vllm'):
             (self.root / name).mkdir(parents=True)
-        for name in ('scripts/config.sh', 'scripts/setup_env.sh', 'scripts/start_vllm.sh',
+        for name in ('scripts/select_package_source.py', 'uv.lock', 'uv.aliyun.lock', 'scripts/config.sh', 'scripts/setup_env.sh', 'scripts/start_vllm.sh',
                      'start_svr.sh', 'configs/default.toml', 'third_party/vllm/qwen3_reranker.jinja',
                      'configs/baseline.toml', 'src/paimem/launcher.py', 'src/paimem/database_check.py', 'src/paimem/configuration.py', 'src/paimem/long_question.py'):
             shutil.copyfile(ROOT / name, self.root / name)
@@ -93,6 +93,8 @@ else:
         (self.root / 'configs/config.local.toml').write_text('\n'.join(lines) + '\n')
 
     def run_script(self, script, *args, ok=True, env=None):
+        if script == 'scripts/setup_env.sh' and '--source' not in args:
+            args = (*args, '--source', 'pypi')
         result = subprocess.run(['bash', str(self.root / script), *args], cwd='/tmp',
                                 env={**self.env, **(env or {})}, text=True, capture_output=True)
         if ok:
@@ -261,3 +263,52 @@ raise SystemExit(35)
         self.assertFalse(json.loads(result.stdout)['reranker'])
         failure = self.run_script('scripts/setup_env.sh', env={'EMBEDDING_BACKEND': ''}, ok=False)
         self.assertIn('EMBEDDING_BACKEND', failure.stderr)
+
+
+    def test_mirror_swap_restores_on_success_and_failure(self):
+        original = (self.root / 'uv.lock').read_bytes()
+        self.run_script('scripts/setup_env.sh', '--source', 'aliyun')
+        self.assertEqual((self.root / 'uv.lock').read_bytes(), original)
+        self.install_mock('uv', "if sys.argv[1:3] == ['python', 'find']: print(sys.executable)\nif sys.argv[1] == 'sync': raise SystemExit(42)")
+        self.run_script('scripts/setup_env.sh', '--source', 'aliyun', ok=False)
+        self.assertEqual((self.root / 'uv.lock').read_bytes(), original)
+        self.assertFalse((self.root / '.uv.lock.setup-backup').exists())
+
+    def test_stale_swap_is_recovered(self):
+        original = (self.root / 'uv.lock').read_bytes()
+        (self.root / '.uv.lock.setup-backup').write_bytes(original)
+        shutil.copyfile(self.root / 'uv.aliyun.lock', self.root / 'uv.lock')
+        self.run_script('scripts/setup_env.sh', '--source', 'pypi')
+        self.assertEqual((self.root / 'uv.lock').read_bytes(), original)
+
+    def test_source_selection_and_timeout(self):
+        from scripts.select_package_source import select
+        from unittest.mock import patch
+        import tomllib
+        locks = {name: tomllib.loads((ROOT / path).read_text()) for name, path in
+                 [('pypi', 'uv.lock'), ('aliyun', 'uv.aliyun.lock')]}
+        with patch('scripts.select_package_source.probe', side_effect=lambda url: 20 if 'aliyun' in url else 10):
+            self.assertEqual(select('auto', locks), 'aliyun')
+        with patch('scripts.select_package_source.probe', side_effect=lambda url: 0 if 'aliyun' in url else 10):
+            self.assertEqual(select('auto', locks), 'pypi')
+        with patch('scripts.select_package_source.probe', side_effect=subprocess.TimeoutExpired('curl', 8)):
+            with self.assertRaisesRegex(ValueError, 'Both source probes failed'):
+                select('auto', locks)
+        locks['aliyun']['package'][0]['version'] = '0.0.0'
+        with self.assertRaisesRegex(ValueError, 'Lockfiles differ'):
+            select('aliyun', locks)
+
+    def test_concurrent_service_sync_is_rejected(self):
+        import fcntl
+        import hashlib
+        guard_path = Path('/tmp') / ('paimem-setup-' + hashlib.sha256(str(self.root.resolve()).encode()).hexdigest() + '.lock')
+        with guard_path.open('a') as guard:
+            fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            failure = self.run_script('scripts/setup_env.sh', ok=False)
+        self.assertIn('Another service setup', failure.stderr)
+        self.assertFalse(any(c[1] == 'sync' for c in self.commands()))
+
+    def test_invalid_source_is_rejected_before_install(self):
+        failure = self.run_script('scripts/setup_env.sh', '--source', 'unknown', ok=False)
+        self.assertIn('--source must be', failure.stderr)
+        self.assertEqual(self.commands(), [])
