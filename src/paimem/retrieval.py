@@ -9,7 +9,7 @@ from typing import Callable, Mapping, Sequence
 import numpy as np
 
 from .chunking import TOKEN_PATTERN
-from .embeddings import Embedder
+from .embeddings import Embedder, timed_embedding_lock, timed_operation, timing_stage
 from .rank_fusion import RankFusionConfig, fuse
 from .mempursuit import MemPursuitConfig, select as select_memories
 from .reranking import Reranker
@@ -60,6 +60,7 @@ class ChunkRanking:
     diagnostics: dict | None = None
 
 
+@timed_operation('retrieval.total')
 def retrieve_chunks(
     rows: Sequence, names: Mapping[str, str], query: str, top_k: int, *,
     embedder: Embedder, embedding_lock, render_content: Callable,
@@ -128,7 +129,7 @@ def retrieve_chunks(
             # 否则仅采用 query 进行检索
             query_views = [retrieval_query]
     # retrieval query embeddings
-    with embedding_lock:
+    with timed_embedding_lock(embedding_lock, 'query_embedding', len(query_views), embedder=embedder):
         query_vectors = np.asarray(embedder.encode_queries(query_views), dtype=np.float32)
     if query_vectors.ndim != 2 or query_vectors.shape[0] != len(query_views):
         raise ValueError("Embedder returned an invalid query vector matrix")
@@ -200,12 +201,13 @@ def retrieve_chunks(
             for position in candidate_positions
         ]
         stage_detail["rerank_active"] = rerank_small2big_enabled
-        rerank_scores = np.asarray(
-            reranker.score(query, candidate_documents),
-            dtype=np.float32,
-        ).reshape(-1)
-        if rerank_scores.shape != (candidate_count,) or not np.all(np.isfinite(rerank_scores)):
-            raise ValueError("Reranker returned invalid scores")
+        with timing_stage('reranker.score', inputs=candidate_count):
+            rerank_scores = np.asarray(
+                reranker.score(query, candidate_documents),
+                dtype=np.float32,
+            ).reshape(-1)
+            if rerank_scores.shape != (candidate_count,) or not np.all(np.isfinite(rerank_scores)):
+                raise ValueError("Reranker returned invalid scores")
         rerank_order = np.lexsort(
             (-result_scores[candidate_positions], -rerank_scores)
         )
@@ -229,7 +231,7 @@ def retrieve_chunks(
             # or the existing options-appended query in other modes.
             pursuit_matrix = matrix[pool]
             if mempursuit_small2big_enabled:
-                with embedding_lock:
+                with timed_embedding_lock(embedding_lock, 'mempursuit_embedding', len(pool), embedder=embedder):
                     pursuit_matrix = np.asarray(embedder.encode_documents(
                         [context_text(position) for position in pool]), dtype=np.float32)
                 if pursuit_matrix.shape != (len(pool), dimension) or not np.all(np.isfinite(pursuit_matrix)):

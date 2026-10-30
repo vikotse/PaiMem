@@ -38,7 +38,7 @@ unset config_exports
 | 分组 | 集中配置的内容 |
 |---|---|
 | `[service]`、`[environment]` | API 密钥、数据库、监听地址；Python、依赖和模型下载地址 |
-| `[embedding]`、`.remote`、`.local` | 后端、模型/API 或下载路径、batch size、RPM/TPM |
+| `[embedding]`、`.remote`、`.local` | 后端、模型/API 或下载路径、batch size、并发数、RPM/TPM |
 | `[reranker]`、`.local`、`.vllm` | 开关、候选数、上下文、本地模型或 vLLM 客户端与服务端 |
 | `[retrieval]`、`[context]`、`[time]` | 混合检索、分块、上下文重建、时间处理 |
 | `[mempursuit]`、`[rank_fusion]`、`[near]` | 各策略开关和数值参数 |
@@ -59,12 +59,13 @@ model = "text-embedding-v4" # 示例，使用供应商接受的模型名
 base_url = "https://your-provider.example/v1" # 替换为实际地址
 api_key = "REPLACE_WITH_EMBEDDING_API_KEY"
 batch_size = 10
+max_concurrency = 4
 rpm = 1500    # 示例配额，按实际值设置；0 关闭
-tpm = 800000 # 示例估算 token 配额；0 关闭
+tpm = 1800000 # 示例 token 配额；0 关闭
 query_prefix = "" # 明确表示不加前缀
 ```
 
-环境准备会跳过全部 embedding 下载，无需本地模型目录，也无需 embedding vLLM 进程。API 地址不要追加 `/embeddings`。RPM/TPM 按滚动 60 秒计算，TPM 使用 UTF-8 字节长度保守估算。上例配额仅供参考，请按供应商实际限制设置。详见[限流行为](#embedding-批量与远程限流)。
+环境准备会跳过全部 embedding 下载，无需本地模型目录，也无需 embedding vLLM 进程。API 地址不要追加 `/embeddings`。RPM/TPM 按滚动 60 秒计算，TPM 先按 UTF-8 字节长度预留，再按供应商返回的有效 token 用量修正。上例配额仅供参考，请按供应商实际限制设置。详见[限流行为](#embedding-批量与远程限流)。
 
 ### 本地 embedding：先准备模型，再启动 PaiMem
 
@@ -99,7 +100,9 @@ query_prefix = "auto" # 保留模型默认；空字符串明确关闭前缀
 
 三个脚本均支持 `--config configs/experiment.local.toml`。分机器部署见 [vLLM 部署文档](vllm.zh-CN.md)。
 
-可选镜像位于 `[environment]`；缺少 uv 时使用[官方安装器](https://docs.astral.sh/uv/getting-started/installation/)。使用基线时，将 `configs/baseline.toml` 复制为**新的** `*.local.toml`，填写启用组件的凭据，并在环境准备和启动时传入同一路径。
+可选镜像位于 `[environment]`。已导出的 `HF_ENDPOINT` 优先于 `environment.hf_endpoint`；显式配置后不探测、不自动切换。两者都未设置时，模型准备会探测 `https://huggingface.co`（连接超时 5 秒，总超时 10 秒），成功则使用官方端点，失败则选择 `https://hf-mirror.com`。同一次准备进程中的后续下载复用该选择；复用已有模型目录时不探测。模板将 `hf_endpoint` 保留为注释示例，取消注释即可显式指定端点。
+
+缺少 uv 时使用[官方安装器](https://docs.astral.sh/uv/getting-started/installation/)。使用基线时，将 `configs/baseline.toml` 复制为**新的** `*.local.toml`，填写启用组件的凭据，并在环境准备和启动时传入同一路径。
 
 ## Embedding 批量与远程限流
 
@@ -108,24 +111,49 @@ query_prefix = "auto" # 保留模型默认；空字符串明确关闭前缀
 | 变量 | default 预设值 | 含义 |
 |---|---:|---|
 | `EMBEDDING_BATCH_SIZE` | 本地 64；远程 10 | 正整数，每批最多输入条数，须遵守供应商单次请求限制。 |
+| `EMBEDDING_MAX_CONCURRENCY` | 4 | 正整数，同一远程 embedder 实例中所有调用共用的批次工作线程数。 |
 | `EMBEDDING_RPM` | 1500 | 非负整数，每滚动 60 秒允许的远程 HTTP 请求尝试次数；0 关闭该限制。 |
-| `EMBEDDING_TPM` | 800000 | 非负整数，每滚动 60 秒允许的远程输入 token 估算量；0 关闭该限制。 |
+| `EMBEDDING_TPM` | 1800000 | 非负整数，每滚动 60 秒的远程 token 预算，发送前估算、响应后按用量修正；0 关闭该限制。 |
 
 表中数值来自 `configs/default.toml`；RPM/TPM 需按供应商配额调整。`baseline` 预设及未显式设置配额的直接 API 启动使用 0，表示关闭对应限流。
 
 ```bash
 # 以下配额仅为示例，请替换为供应商实际限制。
 export EMBEDDING_BATCH_SIZE=10
+export EMBEDDING_MAX_CONCURRENCY=4
 export EMBEDDING_RPM=1500
-export EMBEDDING_TPM=800000
+export EMBEDDING_TPM=1800000
 bash start_svr.sh --config configs/config.local.toml
 ```
 
 远程请求会等待至两项已启用配额均允许发送。每次重试都会重新占用配额，失败请求也计数。批次同时满足 batch size 与 TPM，必要时自动拆分；若单条输入超过 TPM，该次调用会在发送任何输入前报错，不截断文本。查询前缀计入估算。本地 embedding 仅使用 batch size。
 
-TPM 按 UTF-8 字节长度保守估算，并非供应商 tokenizer 的精确计数或计费量。请预留配额余量，按供应商情况调整。重试会遵守有效的 `Retry-After` 响应头（秒数或 HTTP 日期），同时应用指数退避和本地配额检查，每批最多尝试三次。
+TPM 在发送前按 UTF-8 字节长度预留，包含查询前缀。成功响应中若存在正整数 `usage.total_tokens`、`usage.prompt_tokens` 或 `usage.input_tokens`，会按此优先级选择用量，修正仍处于滚动窗口内的预留；缺少有效 usage 时保留估算。修正不退还 RPM，失败尝试保留预留额度。这是客户端计数，不保证与供应商的 tokenizer、限流窗口或计费规则完全一致，仍应预留配额余量。重试会遵守有效的 `Retry-After` 响应头（秒数或 HTTP 日期），同时应用指数退避和本地配额检查，每批最多尝试三次。
 
-限流器线程安全，同一 embedder 实例内的文档编码和查询调用共用额度；不同进程、不同实例或共用账号的其他客户端之间不共享计数，需自行分配配额。参数在实例创建时读取，修改后需重启服务。`--check` 会校验所选 embedding 后端的批量与配额数值。
+远程批次并发执行，返回结果按输入顺序恢复。query、document 和 MemPursuit 调用共用工作线程池，不再持有 store 的 embedding 锁；local/自定义后端保留该锁。工作线程限制包含等待配额或重试退避的批次，因此只是 HTTP 并发上限，并非目标请求速率。两份模板与直接构造实例的默认值均为 4。
+
+限流器线程安全，同一 embedder 实例内的文档编码和查询调用共用额度；不同进程、不同实例或共用账号的其他客户端之间不共享计数，需自行分配配额。参数在实例创建时读取，修改后需重启服务。`--check` 会校验所选 embedding 后端的批量、并发与配额数值。
+
+
+## 请求与阶段计时
+
+以下环境变量开关相互独立，默认关闭，设置为 `1` 或 `true` 时启用；它们不是 TOML 字段。
+
+| 变量 | 输出 |
+|---|---|
+| `MEMORY_REQUEST_TIMING_ENABLED` | 每个 POST `/add`、`/search` 输出一条 `paimem_request_timing` JSON 日志，包含失败请求。 |
+| `MEMORY_TIMING_ENABLED` | 输出 `paimem_timing` 明细，覆盖 embedding 排队、配额等待、HTTP、重试，以及检索和重排阶段。 |
+
+```bash
+MEMORY_TIMING_ENABLED=0 MEMORY_REQUEST_TIMING_ENABLED=1 \
+  bash start_svr.sh --config configs/config.local.toml
+```
+
+请求总耗时从进入应用中间件开始，计至最终响应体发送给 ASGI 服务层，包含应用线程池排队和锁等待；不含进入中间件前的代理/服务器排队及客户端网络耗时。未处理异常在离开中间件时记录，尚未开始响应时状态码按 500 记录。日志仅含生成的 trace ID、路由、HTTP 状态和毫秒耗时，不含请求正文、凭据或异常消息。
+
+阶段耗时可能嵌套，不能直接将父子阶段相加。阶段 trace ID 标识 store 操作，与请求日志的 trace ID 独立。远程 embedding 保留 `.encode` 耗时，不输出 store 的 `.lock_wait`；工作线程池排队和配额等待分别看 `embedding.queue_wait`、`embedding.rate_limit_wait`。两类日志均使用 WARNING，以便在默认日志配置下可见；该级别本身不表示请求失败。
+
+客户端命令及指标口径见 [Add/Search 压测](load-testing.zh-CN.md)。
 
 
 ## 两套预设

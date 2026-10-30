@@ -1,8 +1,11 @@
 import importlib
+import json
 import os
 import sqlite3
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -14,10 +17,193 @@ PACKAGES = ('paimem',)
 
 
 class EmbeddingTests(unittest.TestCase):
+    def test_parallel_batches_keep_input_order(self):
+        from paimem import embeddings as module
+        barrier = threading.Barrier(4)
+        gates = [threading.Event() for _ in range(4)]
+        completion_order = []
+
+        def handler(request):
+            i = int(json.loads(request.content)['input'][0])
+            barrier.wait(timeout=5)
+            if i < 3:
+                self.assertTrue(gates[i + 1].wait(5))
+            completion_order.append(i)
+            gates[i].set()
+            return httpx.Response(200, json={'data': [{'index': 0, 'embedding': [i + 1, 1]}]})
+
+        real_client = httpx.Client
+        with patch.dict(os.environ, {'EMBEDDING_BATCH_SIZE': '1', 'EMBEDDING_MAX_CONCURRENCY': '4'}, clear=True), \
+                patch('httpx.Client', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)):
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
+            self.addCleanup(model.close)
+            matrix = model.encode_documents(['0', '1', '2', '3'])
+        self.assertEqual(completion_order, [3, 2, 1, 0])
+        expected = np.array([[1, 1], [2, 1], [3, 1], [4, 1]], dtype=np.float32)
+        expected /= np.linalg.norm(expected, axis=1, keepdims=True)
+        np.testing.assert_allclose(matrix, expected)
+
+    def test_usage_refunds_byte_estimates_before_next_batch(self):
+        from paimem import embeddings as module
+        real_client = httpx.Client
+        def handler(request):
+            return httpx.Response(200, json={'data': [{'index': 0, 'embedding': [1, 1]}],
+                                            'usage': {'prompt_tokens': 1, 'total_tokens': 1}})
+        with patch.dict(os.environ, {'EMBEDDING_BATCH_SIZE': '1', 'EMBEDDING_MAX_CONCURRENCY': '1',
+                                    'EMBEDDING_RPM': '10', 'EMBEDDING_TPM': '6'}, clear=True), \
+                patch('httpx.Client', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)), \
+                patch.object(module._RateLimiter, '_wait', side_effect=AssertionError('usage should free quota')):
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
+            self.addCleanup(model.close)
+            model.encode_documents(['中'] * 4)
+        self.assertEqual(model._limiter._tokens, 4)  # Not 12 UTF-8 bytes.
+        self.assertEqual(len(model._limiter._events), 4)  # RPM is never refunded.
+
+    def test_quota_reconciliation_wakes_waiters_and_ignores_expired_usage(self):
+        from paimem import embeddings as module
+        limiter = module._RateLimiter(10, 10)
+        first = limiter.acquire(8)
+        waiting = threading.Event()
+        real_wait = limiter._wait
+        def wait_for_quota(delay):
+            waiting.set()
+            real_wait(delay)
+        diagnostics = {}
+        with patch.object(limiter, '_wait', side_effect=wait_for_quota), ThreadPoolExecutor(1) as pool:
+            future = pool.submit(limiter.acquire, 8, diagnostics)
+            try:
+                self.assertTrue(waiting.wait(5))
+            finally:
+                limiter.reconcile(first, 1)
+            second = future.result(timeout=5)
+        self.assertTrue(diagnostics['tpm_blocked'])
+        self.assertFalse(diagnostics['rpm_blocked'])
+        self.assertEqual(limiter._tokens, 9)
+        with patch.object(module.time, 'monotonic', return_value=second.timestamp + 61):
+            limiter.reconcile(first, 5)
+            limiter.reconcile(second, 2)
+        self.assertEqual(limiter._tokens, 0)
+        self.assertEqual(len(limiter._events), 0)
+
+    def test_actual_usage_above_estimate_blocks_until_window_expires(self):
+        from paimem import embeddings as module
+        clock = [0.0]
+        def advance(delay):
+            clock[0] += delay
+        with patch.object(module.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(module._RateLimiter, '_wait', side_effect=advance):
+            limiter = module._RateLimiter(10, 10)
+            ticket = limiter.acquire(2)
+            limiter.reconcile(ticket, 12)
+            diagnostics = {}
+            limiter.acquire(1, diagnostics)
+        self.assertEqual(clock[0], 60)
+        self.assertTrue(diagnostics['tpm_blocked'])
+        self.assertEqual(limiter._tokens, 1)
+
+    def test_usage_validation(self):
+        from paimem import embeddings as module
+        for body in (None, [], {}, {'usage': None}, {'usage': {'total_tokens': True}},
+                     {'usage': {'total_tokens': -1}}, {'usage': {'total_tokens': 0}},
+                     {'usage': {'total_tokens': '20'}}):
+            self.assertIsNone(module._usage_tokens(body))
+        self.assertEqual(module._usage_tokens({'usage': {'input_tokens': 4}}), 4)
+        self.assertEqual(module._usage_tokens({'usage': {'prompt_tokens': 5}}), 5)
+        self.assertEqual(module._usage_tokens({'usage': {'prompt_tokens': 5, 'total_tokens': 6}}), 6)
+
+    def test_parallel_retry_only_resends_failed_batch_and_counts_attempts(self):
+        from paimem import embeddings as module
+        from collections import Counter
+        calls = Counter()
+        lock = threading.Lock()
+        def handler(request):
+            text = json.loads(request.content)['input'][0]
+            with lock:
+                calls[text] += 1
+                fail = text == 'bbb' and calls[text] == 1
+            if fail:
+                return httpx.Response(429)
+            return httpx.Response(200, json={'data': [{'index': 0, 'embedding': [1, 1]}],
+                                            'usage': {'total_tokens': 1}})
+        real_client = httpx.Client
+        with patch.dict(os.environ, {'EMBEDDING_BATCH_SIZE': '1', 'EMBEDDING_MAX_CONCURRENCY': '2',
+                                    'EMBEDDING_RPM': '10', 'EMBEDDING_TPM': '100'}, clear=True), \
+                patch('httpx.Client', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)), \
+                patch.object(module.time, 'sleep'):
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
+            self.addCleanup(model.close)
+            model.encode_documents(['aaa', 'bbb'])
+        self.assertEqual(calls, {'aaa': 1, 'bbb': 2})
+        self.assertEqual(len(model._limiter._events), 3)
+        self.assertEqual(model._limiter._tokens, 5)  # Failed attempt keeps its 3-byte reservation.
+
+    def test_remote_query_and_document_calls_overlap_and_share_quota(self):
+        from paimem import embeddings as module
+        barrier = threading.Barrier(2)
+
+        def handler(request):
+            # Both HTTP calls must enter before either can return. An outer
+            # embedding lock (or metadata lock around I/O) breaks this barrier.
+            barrier.wait(timeout=5)
+            text = json.loads(request.content)['input'][0]
+            vector = [3, 4] if text == 'q:query' else [4, 3]
+            return httpx.Response(200, json={'data': [{'index': 0, 'embedding': vector}]})
+
+        real_client = httpx.Client
+        with patch.dict(os.environ, {'EMBEDDING_RPM': '10', 'EMBEDDING_TPM': '1000'}, clear=True), \
+                patch('httpx.Client', side_effect=lambda **kw: real_client(
+                    transport=httpx.MockTransport(handler), **kw)):
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's', query_prefix='q:')
+            outer_lock = threading.RLock()
+
+            def encode(query):
+                with module.timed_embedding_lock(outer_lock, 'test_embedding', 1, embedder=model):
+                    return (model.encode_queries(['query']) if query
+                            else model.encode_documents(['document']))
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                query, document = list(pool.map(encode, [True, False]))
+            np.testing.assert_allclose(query, [[.6, .8]])
+            np.testing.assert_allclose(document, [[.8, .6]])
+            self.assertEqual(model.dimension, 2)
+            self.assertEqual(len(model._limiter._events), 2)
+            self.assertEqual(model._limiter._tokens, len('q:query') + len('document'))
+
+    def test_concurrent_first_responses_cannot_change_embedding_dimension(self):
+        from paimem import embeddings as module
+        barrier = threading.Barrier(2)
+
+        def handler(request):
+            barrier.wait(timeout=5)
+            size = int(json.loads(request.content)['input'][0])
+            return httpx.Response(200, json={'data': [{'index': 0, 'embedding': [1] * size}]})
+
+        real_client = httpx.Client
+        with patch.dict(os.environ, {}, clear=True), \
+                patch('httpx.Client', side_effect=lambda **kw: real_client(
+                    transport=httpx.MockTransport(handler), **kw)):
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
+
+            def encode(size):
+                try:
+                    return model.encode_documents([str(size)])
+                except ValueError as exc:
+                    return exc
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(encode, [2, 3]))
+            successful = [r for r in results if isinstance(r, np.ndarray)]
+            errors = [r for r in results if isinstance(r, ValueError)]
+            self.assertEqual(len(successful), 1)
+            self.assertEqual(len(errors), 1)
+            self.assertEqual(successful[0].shape[1], model.dimension)
+            self.assertEqual(model.encode_documents([]).shape, (0, model.dimension))
+
     def test_batch_and_quota_validation(self):
         from paimem import embeddings as module
         for key, values in {
             'EMBEDDING_BATCH_SIZE': ['0', '-1', '1.5', 'bad'],
+            'EMBEDDING_MAX_CONCURRENCY': ['0', '-1', '1.5', 'bad'],
             'EMBEDDING_RPM': ['-1', '1.5', 'bad'],
             'EMBEDDING_TPM': ['-1', '1.5', 'bad'],
         }.items():
@@ -29,7 +215,10 @@ class EmbeddingTests(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, key):
                             module.SentenceTransformerEmbedder('unused')
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(module.RemoteEmbedder('v4', 'https://example.com/v1', 's').batch_size, 10)
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
+            self.addCleanup(model.close)
+            self.assertEqual(model.batch_size, 10)
+            self.assertEqual(model.max_concurrency, 4)
         for value, expected in [(None, 64), ('3', 3)]:
             env = {} if value is None else {'EMBEDDING_BATCH_SIZE': value}
             fake_model = SimpleNamespace(device='cpu', encode=lambda texts, **kw: np.ones((len(texts), 2)))
@@ -54,9 +243,10 @@ class EmbeddingTests(unittest.TestCase):
             return httpx.Response(200, json={'data': [
                 {'index': i, 'embedding': [i + 1, 2]} for i in range(len(batch))]})
         real_client = httpx.Client
-        with patch.dict(os.environ, {'EMBEDDING_BATCH_SIZE': '2', 'EMBEDDING_RPM': '2',
+        with patch.dict(os.environ, {'EMBEDDING_MAX_CONCURRENCY': '1', 'EMBEDDING_BATCH_SIZE': '2', 'EMBEDDING_RPM': '2',
                                     'EMBEDDING_TPM': '6'}, clear=True), \
                 patch.object(module.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(module._RateLimiter, '_wait', side_effect=sleep), \
                 patch.object(module.time, 'sleep', side_effect=sleep), \
                 patch('httpx.Client', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)):
             model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's', query_prefix='q:')
@@ -86,6 +276,7 @@ class EmbeddingTests(unittest.TestCase):
             return httpx.Response(200, json={'data': [{'index': 0, 'embedding': [3, 4]}]})
         with patch.dict(os.environ, {'EMBEDDING_RPM': '1'}, clear=True), \
                 patch.object(module.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(module._RateLimiter, '_wait', side_effect=sleep), \
                 patch.object(module.time, 'sleep', side_effect=sleep), patch('httpx.Client') as client:
             client.return_value.__enter__.return_value.post.side_effect = post
             model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
@@ -105,6 +296,7 @@ class EmbeddingTests(unittest.TestCase):
         def sleep(delay):
             clock[0] += delay
         with patch.object(module.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(module._RateLimiter, '_wait', side_effect=sleep), \
                 patch.object(module.time, 'sleep', side_effect=sleep):
             limiter = module._RateLimiter(2, 0)
             limiter.acquire(2)
@@ -221,6 +413,7 @@ class EmbeddingTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     model.encode_queries(['text'])
 
+    @patch.dict(os.environ, {'EMBEDDING_MAX_CONCURRENCY': '1'})
     def test_transient_failure_retries_only_failed_batch(self):
         for package in PACKAGES:
             module = importlib.import_module(package + '.embeddings')

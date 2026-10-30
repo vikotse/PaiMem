@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 import secrets
 import stat
+import time
+from uuid import uuid4
 from contextlib import asynccontextmanager, contextmanager
 from functools import lru_cache
 from typing import Annotated, Literal
@@ -676,6 +678,52 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="PaiMem Memory API", version="0.1.0", lifespan=lifespan)
+
+
+class RequestTimingMiddleware:
+    """Log one elapsed time through the final response body, without request data."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (scope['type'] != 'http' or scope.get('method') != 'POST'
+                or scope.get('path') not in {'/add', '/search'}
+                or os.environ.get('MEMORY_REQUEST_TIMING_ENABLED', '').lower() not in {'1', 'true'}):
+            return await self.app(scope, receive, send)
+        started = time.perf_counter()
+        trace_id = uuid4().hex
+        status_code = 500
+        logged = False
+
+        def log_once():
+            nonlocal logged
+            if logged:
+                return
+            logged = True
+            logging.getLogger('paimem.request_timing').warning(
+                'paimem_request_timing %s', json.dumps({
+                    'trace_id': trace_id, 'path': scope['path'],
+                    'status_code': status_code,
+                    'elapsed_ms': round((time.perf_counter() - started) * 1000, 3),
+                }, separators=(',', ':')))
+
+        async def timed_send(message):
+            nonlocal status_code
+            if message['type'] == 'http.response.start':
+                status_code = message['status']
+            await send(message)
+            if message['type'] == 'http.response.body' and not message.get('more_body', False):
+                log_once()
+
+        try:
+            await self.app(scope, receive, timed_send)
+        finally:
+            # Unhandled failures may be converted to 500 by the outer server middleware.
+            log_once()
+
+
+app.add_middleware(RequestTimingMiddleware)
 
 
 validation_logger = logging.getLogger("paimem.validation")

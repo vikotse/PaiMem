@@ -12,6 +12,32 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StartupScriptTests(unittest.TestCase):
+    def test_unspecified_and_explicit_hf_endpoint_configuration(self):
+        from paimem.configuration import prepare
+        path = self.root / 'configs/config.local.toml'
+        _, env = prepare(path, environ={}, scope='bootstrap')
+        self.assertNotIn('HF_ENDPOINT', env)
+        self.write_settings(HF_ENDPOINT='https://configured.example')
+        _, env = prepare(path, environ={}, scope='bootstrap')
+        self.assertEqual(env['HF_ENDPOINT'], 'https://configured.example')
+        for value in ('https://exported.example', ''):
+            _, env = prepare(path, environ={'HF_ENDPOINT': value}, scope='bootstrap')
+            self.assertEqual(env['HF_ENDPOINT'], value)
+
+    def test_remote_concurrency_configuration(self):
+        from paimem.configuration import prepare
+        path = self.root / 'configs/config.local.toml'
+        _, env = prepare(path, environ={})
+        self.assertEqual(env['EMBEDDING_MAX_CONCURRENCY'], '4')
+        self.write_settings(EMBEDDING_MAX_CONCURRENCY=7)
+        _, env = prepare(path, environ={})
+        self.assertEqual(env['EMBEDDING_MAX_CONCURRENCY'], '7')
+        _, env = prepare(path, environ={'EMBEDDING_MAX_CONCURRENCY': '3'})
+        self.assertEqual(env['EMBEDDING_MAX_CONCURRENCY'], '3')
+        for value in ('0', '-1', '1.5', 'bad'):
+            with self.assertRaises(ValueError):
+                prepare(path, environ={'EMBEDDING_MAX_CONCURRENCY': value})
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='paimem scripts ')
         self.addCleanup(self.tmp.cleanup)
@@ -28,6 +54,7 @@ class StartupScriptTests(unittest.TestCase):
             'PATH': str(self.root / 'fake-bin') + os.pathsep + os.environ['PATH'],
             'HOME': os.environ['HOME'], 'PYTHONDONTWRITEBYTECODE': '1',
             'PYTHONPATH': str(self.root / 'src'), 'TEST_LOG': str(self.log),
+            'HF_ENDPOINT': 'https://explicit.example',
         }
         self.install_mock('uv', '''
 args = sys.argv[1:]
@@ -84,6 +111,8 @@ else:
                 table = table[part]
             lines.append('[' + section + ']')
             for field, (key, default) in fields.items():
+                if key == 'HF_ENDPOINT' and key not in self.settings and field not in table:
+                    continue
                 value = self.settings.get(key, table.get(field, default))
                 if type(default) is bool and isinstance(value, str):
                     value = value.lower() in ('true', '1')
@@ -107,6 +136,65 @@ else:
 
     def commands(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
+
+    def test_hf_endpoint_selection_and_reuse(self):
+        self.install_mock('curl', '''
+assert '--connect-timeout' in sys.argv and '--max-time' in sys.argv
+assert sys.argv[-1] == 'https://huggingface.co'
+with open(os.environ['TEST_LOG'], 'a') as f:
+    f.write(json.dumps(['probe']) + '\\n')
+raise SystemExit(int(os.environ.get('PROBE_EXIT', '0')))
+''')
+        self.install_mock('uv', '''
+with open(os.environ['TEST_LOG'], 'a') as f:
+    f.write(json.dumps(['download-endpoint', os.environ.get('HF_ENDPOINT')]) + '\\n')
+''')
+        for explicit, code, expected in [
+            (None, '0', 'https://huggingface.co'),
+            (None, '28', 'https://hf-mirror.com'),
+            (None, '7', 'https://hf-mirror.com'),
+            ('https://custom.example', '28', 'https://custom.example'),
+            ('', '28', ''),
+        ]:
+            with self.subTest(explicit=explicit, code=code):
+                self.log.unlink(missing_ok=True)
+                env = {**self.env, 'PROBE_EXIT': code}
+                env.pop('HF_ENDPOINT')
+                if explicit is not None:
+                    env['HF_ENDPOINT'] = explicit
+                result = subprocess.run(
+                    ['bash', '-eu', '-c', 'source scripts/config.sh; '
+                     'paimem_select_config; paimem_load_config bootstrap; '
+                     'paimem_download_model org/one models/one rev; '
+                     'paimem_download_model org/two models/two ""'],
+                    cwd=self.root, env=env, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.commands().count(['probe']), int(explicit is None))
+                self.assertEqual([c for c in self.commands() if c[0] == 'download-endpoint'],
+                                 [['download-endpoint', expected]] * 2)
+
+        # A TOML endpoint also bypasses probing when no export is supplied.
+        self.log.unlink(missing_ok=True)
+        self.write_settings(HF_ENDPOINT='https://configured.example')
+        env = dict(self.env)
+        env.pop('HF_ENDPOINT')
+        result = subprocess.run(
+            ['bash', '-eu', '-c', 'source scripts/config.sh; '
+             'paimem_select_config; paimem_load_config bootstrap; '
+             'paimem_download_model org/one models/one rev'],
+            cwd=self.root, env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.commands(), [['download-endpoint', 'https://configured.example']])
+
+    def test_existing_local_model_skips_hf_probe(self):
+        self.env.pop('HF_ENDPOINT')
+        model = self.root / 'models/existing'
+        model.mkdir(parents=True)
+        (model / 'config.json').write_text('{}')
+        self.write_settings(EMBEDDING_BACKEND='local', EMBEDDING_MODEL='models/existing',
+                            EMBEDDING_REPO_ID='')
+        self.run_script('scripts/setup_env.sh')
+        self.assertFalse(any(c[0] == 'curl' or 'download' in c for c in self.commands()))
 
     def test_remote_embedding_existing_vllm_never_downloads(self):
         # Stale local download settings must not cause downloads in remote mode.

@@ -100,7 +100,9 @@ class LauncherTests(unittest.TestCase):
                 table = cfg
                 for part in section.split('.'):
                     table = table[part]
-                self.assertEqual(set(table) - {'local', 'remote', 'vllm'}, set(fields))
+                # The endpoint example is commented out so setup can auto-select it.
+                expected = set(fields) - ({'hf_endpoint'} if section == 'environment' else set())
+                self.assertEqual(set(table) - {'local', 'remote', 'vllm'}, expected)
             _, env = prepare(ROOT / f'configs/{profile}.toml', self.env)
             self.assertEqual(env['MEMORY_MEMPURSUIT_CANDIDATES'], '150')
             self.assertEqual(env['MEMORY_RRF_K'], '60')
@@ -162,6 +164,9 @@ class LauncherTests(unittest.TestCase):
                     table = table[part]
                 for field, (_, fallback) in fields.items():
                     with self.subTest(profile=profile, section=section, field=field):
+                        if section == 'environment' and field == 'hf_endpoint':
+                            self.assertNotIn(field, table)
+                            continue
                         allowed = (int, float) if type(fallback) is float else (type(fallback),)
                         self.assertIn(type(table[field]), allowed)
 

@@ -55,12 +55,26 @@ paimem_gpu_host() {
   nvidia-smi -L >/dev/null || paimem_fail 'NVIDIA GPU is unavailable / NVIDIA GPU 不可用'
 }
 
+paimem_select_hf_endpoint() {
+  # An explicitly supplied endpoint (including an empty value) takes precedence.
+  [[ -z "${HF_ENDPOINT+x}" ]] || return 0
+  command -v curl >/dev/null 2>&1 || paimem_fail 'Install curl first / 请先安装 curl'
+  if curl --fail --silent --location --output /dev/null \
+    --connect-timeout 5 --max-time 10 https://huggingface.co; then
+    export HF_ENDPOINT=https://huggingface.co
+  else
+    export HF_ENDPOINT=https://hf-mirror.com
+    printf 'Hugging Face probe failed; using https://hf-mirror.com / 官方端点探测失败，切换模型下载镜像\n' >&2
+  fi
+}
+
 paimem_download_model() {
   local repo="$1" destination="$2" revision="$3"
   if [[ -z "$repo" ]]; then
     [[ -f "$destination/config.json" ]] || paimem_fail 'Existing model directory has no config.json; set the corresponding REPO_ID to download / 已有模型目录缺少 config.json，请填写对应 REPO_ID 下载'
     return
   fi
+  paimem_select_hf_endpoint
   local -a args=(tool run --from huggingface_hub hf download "$repo" --local-dir "$destination")
   [[ -z "$revision" ]] || args+=(--revision "$revision")
   uv "${args[@]}"

@@ -22,6 +22,7 @@ SCHEMA = {'service': {'host': ('PAIMEM_HOST', '127.0.0.1'),
                       'base_url': ('EMBEDDING_BASE_URL', 'https://your-provider.example/v1'),
                       'api_key': ('EMBEDDING_API_KEY', 'REPLACE_WITH_EMBEDDING_API_KEY'),
                       'batch_size': ('EMBEDDING_BATCH_SIZE', 10),
+                      'max_concurrency': ('EMBEDDING_MAX_CONCURRENCY', 4),
                       'rpm': ('EMBEDDING_RPM', 0),
                       'tpm': ('EMBEDDING_TPM', 0),
                       'query_prefix': ('EMBEDDING_QUERY_PREFIX', '')},
@@ -186,6 +187,10 @@ def prepare(path: Path, environ=None, *, scope='service'):
         for part in section.split('.'):
             table = table.get(part, {})
         for field, (key, default) in SCHEMA[section].items():
+            # Leave an unspecified model endpoint unset so setup can probe it.
+            # Explicit TOML values and exports (including empty strings) win.
+            if key == 'HF_ENDPOINT' and field not in table and key not in env:
+                continue
             if section == 'reranker.vllm' and key == 'CUDA_VISIBLE_DEVICES' and scope not in ('setup', 'vllm'):
                 continue
             value = table.get(field, default)
@@ -240,6 +245,7 @@ def prepare(path: Path, environ=None, *, scope='service'):
         integer('EMBEDDING_BATCH_SIZE')
         if backend == 'remote':
             require('EMBEDDING_BASE_URL', 'EMBEDDING_API_KEY')
+            integer('EMBEDDING_MAX_CONCURRENCY')
             integer('EMBEDDING_RPM', 0)
             integer('EMBEDDING_TPM', 0)
         elif env.get('EMBEDDING_QUERY_PREFIX') == 'auto':
