@@ -38,7 +38,7 @@ unset config_exports
 | Section | Settings kept together |
 |---|---|
 | `[service]`, `[environment]` | API key, database, listener; Python and package/model download endpoints |
-| `[embedding]`, `.remote`, `.local` | Backend, model/API or download path, batch size, RPM/TPM |
+| `[embedding]`, `.remote`, `.local` | Backend, model/API or download path, batch size, concurrency, RPM/TPM |
 | `[reranker]`, `.local`, `.vllm` | Switch, retrieval candidates, context, local model or vLLM client and server |
 | `[retrieval]`, `[context]`, `[time]` | Hybrid retrieval, chunking, context reconstruction, time handling |
 | `[mempursuit]`, `[rank_fusion]`, `[near]` | Each strategy's switch and numerical parameters |
@@ -59,12 +59,13 @@ model = "text-embedding-v4" # Example; use the name accepted by your provider
 base_url = "https://your-provider.example/v1" # Replace this endpoint
 api_key = "REPLACE_WITH_EMBEDDING_API_KEY"
 batch_size = 10
+max_concurrency = 4
 rpm = 1500    # Example quota; set your actual limit, or 0 to disable
-tpm = 800000 # Example estimated-token quota; 0 disables
+tpm = 1800000 # Example token quota; 0 disables
 query_prefix = "" # Explicitly no prefix
 ```
 
-Preparation skips all embedding downloads. No local embedding model directory or embedding vLLM process is needed. Do not append `/embeddings` to the API base. RPM/TPM use a rolling 60-second window; TPM is conservatively estimated using UTF-8 byte length. The quotas above are examples; use your provider's actual limits. See [rate-limit behavior](#embedding-batching-and-remote-rate-limits).
+Preparation skips all embedding downloads. No local embedding model directory or embedding vLLM process is needed. Do not append `/embeddings` to the API base. RPM/TPM use a rolling 60-second window; TPM initially reserves UTF-8 byte length, then reconciles valid token usage reported by the provider. The quotas above are examples; use your provider's actual limits. See [rate-limit behavior](#embedding-batching-and-remote-rate-limits).
 
 ### Local embedding — prepared before PaiMem starts
 
@@ -99,7 +100,7 @@ No repeated exports or environment activation are required. PaiMem dependencies 
 
 All three scripts support `--config configs/experiment.local.toml`. See [vLLM deployment](vllm.md) for separate hosts.
 
-Optional mirrors are configured in `[environment]`. The standard [uv installer](https://docs.astral.sh/uv/getting-started/installation/) is used when uv is absent. To start from the baseline, copy `configs/baseline.toml` to a **new** `*.local.toml`, fill its active credentials, and pass that same path to preparation and startup.
+Optional mirrors are configured in `[environment]`. An exported `HF_ENDPOINT` takes precedence over `environment.hf_endpoint`. An explicitly configured endpoint bypasses probing and automatic fallback. When neither is set, model preparation probes `https://huggingface.co` (5-second connection timeout, 10-second total timeout), uses it on success, and otherwise selects `https://hf-mirror.com`. The selected endpoint is reused for subsequent downloads in that setup process. Reusing existing model directories requires no probe. The templates leave `hf_endpoint` commented out to enable this behavior; uncomment it to choose an endpoint explicitly. The standard [uv installer](https://docs.astral.sh/uv/getting-started/installation/) is used when uv is absent. To start from the baseline, copy `configs/baseline.toml` to a **new** `*.local.toml`, fill its active credentials, and pass that same path to preparation and startup.
 
 ## Embedding batching and remote rate limits
 
@@ -108,24 +109,49 @@ Both profiles group settings by feature, with bilingual parameter comments. Expo
 | Variable | default profile | Meaning |
 |---|---:|---|
 | `EMBEDDING_BATCH_SIZE` | Local: 64; remote: 10 | Positive integer; maximum inputs per batch. Respect the provider's per-request limit. |
+| `EMBEDDING_MAX_CONCURRENCY` | 4 | Positive integer; batch workers shared by all calls on one remote embedder instance. |
 | `EMBEDDING_RPM` | 1500 | Nonnegative integer; remote HTTP attempts per rolling 60 seconds. Zero disables this limit. |
-| `EMBEDDING_TPM` | 800000 | Nonnegative integer; estimated remote input tokens per rolling 60 seconds. Zero disables this limit. |
+| `EMBEDDING_TPM` | 1800000 | Nonnegative integer; remote token budget per rolling 60 seconds, estimated before sending and corrected from reported usage. Zero disables this limit. |
 
 Values above come from `configs/default.toml`; adjust RPM/TPM to your provider's quotas. The `baseline` profile and direct API startup without explicit quotas use 0, disabling the corresponding limits.
 
 ```bash
 # Illustrative quotas: replace with your provider's limits.
 export EMBEDDING_BATCH_SIZE=10
+export EMBEDDING_MAX_CONCURRENCY=4
 export EMBEDDING_RPM=1500
-export EMBEDDING_TPM=800000
+export EMBEDDING_TPM=1800000
 bash start_svr.sh --config configs/config.local.toml
 ```
 
 Remote calls wait until both enabled quotas allow a request. Every retry reserves quota again, including attempts that fail. Batches are split to satisfy both batch size and TPM; an individual input above TPM fails before any input in that call is sent, without truncation. Query prefixes count toward the estimate. Local embedding only uses batch size.
 
-TPM uses UTF-8 byte length as a conservative token estimate, not the provider's tokenizer or billing count. Leave quota headroom and adjust to your provider. A valid `Retry-After` response header (seconds or HTTP date) is honored in addition to exponential backoff and local quota checks, with at most three attempts per batch.
+TPM reserves UTF-8 byte length before sending, including query prefixes. A successful response with a positive integer `usage.total_tokens`, `usage.prompt_tokens`, or `usage.input_tokens` corrects that reservation while it remains in the rolling window, in that priority order. Missing or invalid usage leaves the estimate unchanged. Corrections never refund RPM, and failed attempts retain their reservations. This is client-side accounting, not a guarantee of the provider's tokenizer, quota window, or billing behavior; leave quota headroom. A valid `Retry-After` response header (seconds or HTTP date) is honored in addition to exponential backoff and local quota checks, with at most three attempts per batch.
 
-The limiter is thread-safe and shared by document and query calls on the same embedder instance. It does not coordinate multiple processes, instances, or other clients sharing the account; divide quotas accordingly. Limits are read at embedder creation and require a service restart to change. `--check` validates active embedding batch size and quota limits.
+Remote batches run concurrently and results are restored to input order. Query, document, and MemPursuit calls share the worker pool without holding the store's embedding lock; local/custom backends retain that lock. The worker limit includes batches waiting for quota or retry backoff, so it is an upper bound on HTTP concurrency, not a request-rate target. Both profiles and direct construction default to 4 workers.
+
+The limiter is thread-safe and shared by document and query calls on the same embedder instance. It does not coordinate multiple processes, instances, or other clients sharing the account; divide quotas accordingly. Limits are read at embedder creation and require a service restart to change. `--check` validates active embedding batch size, concurrency and quota limits.
+
+
+## Request and stage timing
+
+These independent environment switches are disabled by default; `1` or `true` enables them. They are not TOML fields.
+
+| Variable | Output |
+|---|---|
+| `MEMORY_REQUEST_TIMING_ENABLED` | One `paimem_request_timing` JSON record per POST `/add` or `/search`, including failures. |
+| `MEMORY_TIMING_ENABLED` | Detailed `paimem_timing` records for embedding queue/quota/HTTP/retry work, retrieval and reranking. |
+
+```bash
+MEMORY_TIMING_ENABLED=0 MEMORY_REQUEST_TIMING_ENABLED=1 \
+  bash start_svr.sh --config configs/config.local.toml
+```
+
+Request timing measures from entry into the application middleware through sending the final response body to the ASGI server. It includes application thread-pool and lock waits, but excludes proxy/server queues before the middleware and client network time. An unhandled failure is logged when it leaves the middleware; before a response starts, its status defaults to 500. Records contain a generated trace ID, route, HTTP status and elapsed milliseconds, without request bodies, credentials or exception messages.
+
+Stage durations can overlap: do not sum parent and child spans. Stage trace IDs identify store operations and are separate from request trace IDs. Remote embedding emits `.encode` timings without the store's `.lock_wait`; `embedding.queue_wait` and `embedding.rate_limit_wait` show worker-pool and quota delays. Both loggers use WARNING so enabled diagnostics appear with the default logging configuration; that level alone does not indicate a failed request.
+
+See [Add/Search load testing](load-testing.md) for client commands and measurement definitions.
 
 
 ## Two profiles

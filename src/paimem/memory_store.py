@@ -19,7 +19,7 @@ from .maintenance import reset_memory_database
 
 from .conflict_strategy import ConflictStrategy, JudgmentQueries, validate_ratios
 from .chunking import TOKEN_PATTERN
-from .embeddings import Embedder
+from .embeddings import Embedder, timed_embedding_lock, timed_operation
 from .sira import SiraConfig, SiraRequest
 from .long_question import LongQuestionConfig
 from .rank_fusion import RankFusionConfig
@@ -604,6 +604,7 @@ class SQLiteMemoryStore:
         finally:
             connection.close()
 
+    @timed_operation('prepare_memories.total')
     def _prepare_memories(self, request_id, messages, role_names):
         # Keep the request hash based on the original payload, including on retries.
         if self.resolve_relative_time_on_add:
@@ -654,7 +655,8 @@ class SQLiteMemoryStore:
         if not pending:
             raise ValueError("messages produced no searchable content")
 
-        with self._embedding_lock:
+        with timed_embedding_lock(self._embedding_lock, 'document_embedding', len(pending),
+                                  embedder=self.embedder):
             vectors = self.embedder.encode_documents([item[5] for item in pending])
         vectors = np.asarray(vectors, dtype=np.float32)
         if vectors.ndim != 2 or vectors.shape[0] != len(pending):
@@ -662,6 +664,7 @@ class SQLiteMemoryStore:
 
         return pending, vectors
 
+    @timed_operation('search.total')
     def search(self, user_id: str, query: str, top_k: int, options: list[str] | None = None,
                diagnostics: bool = False):
         if top_k <= 0:

@@ -34,8 +34,10 @@ diagnostics_dir = "artifacts/diagnostics"
 python = "3.11"
 # Package index; change to your mirror / 包索引，可替换镜像 (UV_DEFAULT_INDEX)
 package_index = "https://pypi.org/simple"
-# Model download endpoint / 模型下载地址 (HF_ENDPOINT)
-hf_endpoint = "https://huggingface.co"
+# Optional model download endpoint / 可选模型下载地址 (HF_ENDPOINT)
+# Omit to probe huggingface.co during setup and fall back to hf-mirror.com.
+# 不配置时，准备模型会探测官方端点，失败后使用 hf-mirror.com；显式配置不探测、不切换。
+# hf_endpoint = "https://huggingface.co"
 
 # --- Embedding selector / Embedding 后端选择 ---
 [embedding]
@@ -55,10 +57,15 @@ base_url = "https://your-provider.example/v1"
 api_key = "REPLACE_WITH_EMBEDDING_API_KEY"
 # Maximum inputs/request / 单次最大输入条数 (EMBEDDING_BATCH_SIZE)
 batch_size = 10
+# Batch workers shared by add/search per embedder instance / 每个 embedder 实例内 add、search 共用的批次并发上限 (EMBEDDING_MAX_CONCURRENCY)
+max_concurrency = 4
+# Quotas below are examples; use your provider's limits and divide across instances.
+# 以下配额仅为示例，按供应商限制填写；多实例需自行分配额度。
 # Requests per rolling minute; 0 off, e.g. 1500 / 每滚动分钟请求数，0 关闭，示例 1500 (EMBEDDING_RPM)
 rpm = 1500
-# Estimated tokens/minute; 0 off, e.g. 800000 / 每分钟估算 token，0 关闭，示例 800000 (EMBEDDING_TPM)
-tpm = 800000
+# Tokens/minute: reserve UTF-8 bytes, reconcile reported usage; 0 off.
+# 每分钟 token：发送前按 UTF-8 字节预留，响应有 usage 时按真实用量修正；无 usage 保留估算。0 关闭。 (EMBEDDING_TPM)
+tpm = 1000000
 # Open string / 开放字符串: "" = no prefix / 不加前缀；nonempty string = literal custom prefix / 非空值直接作为自定义前缀。
 # Example / 示例: "query: ". Remote mode treats "auto" as literal text, not automatic selection / 远程的 "auto" 是普通文本。 (EMBEDDING_QUERY_PREFIX)
 query_prefix = ""
