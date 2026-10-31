@@ -61,6 +61,28 @@ class LauncherTests(unittest.TestCase):
         _, result = prepare(ROOT / 'configs/default.toml', self.env)
         self.assertNotIn('EMBEDDING_MAX_INPUT_TOKENS', result)
 
+    def test_remote_truncation_configuration(self):
+        env = {**self.env, 'EMBEDDING_BACKEND': 'remote',
+               'EMBEDDING_BASE_URL': 'https://example.com/v1', 'EMBEDDING_API_KEY': 'test'}
+        for profile in ('default', 'baseline'):
+            _, result = prepare(ROOT / f'configs/{profile}.toml', env)
+            self.assertEqual(result['EMBEDDING_TRUNCATION_STRATEGY'], 'head+tail')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.toml'
+            for strategy in ('head-only', 'tail-only', 'head+tail'):
+                path.write_text(f'[embedding.remote]\ntruncation_strategy = "{strategy}"\n')
+                _, result = prepare(path, env)
+                self.assertEqual(result['EMBEDDING_TRUNCATION_STRATEGY'], strategy)
+            _, result = prepare(path, {**env, 'EMBEDDING_TRUNCATION_STRATEGY': 'tail-only'})
+            self.assertEqual(result['EMBEDDING_TRUNCATION_STRATEGY'], 'tail-only')
+            for overrides in ({'EMBEDDING_TRUNCATION_STRATEGY': 'invalid'},
+                              {'EMBEDDING_MAX_INPUT_TOKENS': '5'},
+                              {'EMBEDDING_MAX_INPUT_TOKENS': '6', 'EMBEDDING_QUERY_PREFIX': '问:'}):
+                with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                    prepare(path, {**env, **overrides})
+        _, result = prepare(ROOT / 'configs/default.toml', self.env)
+        self.assertNotIn('EMBEDDING_TRUNCATION_STRATEGY', result)
+
     def test_remote_failure_log_path_configuration(self):
         env = {**self.env, 'EMBEDDING_BACKEND': 'remote',
                'EMBEDDING_BASE_URL': 'https://example.com/v1', 'EMBEDDING_API_KEY': 'test'}

@@ -8,6 +8,21 @@ from pathlib import Path
 import shlex
 import tomllib
 
+EMBEDDING_TRUNCATION_MARKER = '\n[... truncated ...]\n'
+EMBEDDING_TRUNCATION_STRATEGIES = ('head-only', 'tail-only', 'head+tail')
+
+
+def validate_embedding_truncation(max_tokens: int, strategy: str, query_prefix: str):
+    if strategy not in EMBEDDING_TRUNCATION_STRATEGIES:
+        raise ValueError('EMBEDDING_TRUNCATION_STRATEGY must be head-only, tail-only or head+tail')
+    required = len(query_prefix.encode('utf-8'))
+    if strategy == 'head+tail':
+        required += len(EMBEDDING_TRUNCATION_MARKER.encode('utf-8'))
+    if required >= max_tokens * 4:
+        raise ValueError('EMBEDDING_MAX_INPUT_TOKENS must leave room for input text after '
+                         'EMBEDDING_QUERY_PREFIX and the truncation marker')
+
+
 # TOML field -> environment variable and default value/type.
 SCHEMA = {'service': {'host': ('PAIMEM_HOST', '127.0.0.1'),
              'port': ('PAIMEM_PORT', 8000),
@@ -23,6 +38,7 @@ SCHEMA = {'service': {'host': ('PAIMEM_HOST', '127.0.0.1'),
                       'api_key': ('EMBEDDING_API_KEY', 'REPLACE_WITH_EMBEDDING_API_KEY'),
                       'batch_size': ('EMBEDDING_BATCH_SIZE', 10),
                       'max_input_tokens': ('EMBEDDING_MAX_INPUT_TOKENS', 8192),
+                      'truncation_strategy': ('EMBEDDING_TRUNCATION_STRATEGY', 'head+tail'),
                       'failure_log_path': ('EMBEDDING_FAILURE_LOG_PATH', ''),
                       'max_concurrency': ('EMBEDDING_MAX_CONCURRENCY', 4),
                       'rpm': ('EMBEDDING_RPM', 0),
@@ -249,6 +265,9 @@ def prepare(path: Path, environ=None, *, scope='service'):
             require('EMBEDDING_BASE_URL', 'EMBEDDING_API_KEY')
             integer('EMBEDDING_MAX_CONCURRENCY')
             integer('EMBEDDING_MAX_INPUT_TOKENS')
+            validate_embedding_truncation(int(env['EMBEDDING_MAX_INPUT_TOKENS']),
+                                          env['EMBEDDING_TRUNCATION_STRATEGY'],
+                                          env['EMBEDDING_QUERY_PREFIX'])
             integer('EMBEDDING_RPM', 0)
             integer('EMBEDDING_TPM', 0)
         elif env.get('EMBEDDING_QUERY_PREFIX') == 'auto':

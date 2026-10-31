@@ -21,6 +21,7 @@ from typing import Protocol
 import numpy as np
 
 from .mps_runtime import inference_guard
+from .configuration import EMBEDDING_TRUNCATION_MARKER, validate_embedding_truncation
 
 
 _timing_context = ContextVar('paimem_timing_context', default=None)
@@ -232,6 +233,9 @@ class RemoteEmbedder:
                  query_prefix: str | None = None) -> None:
         self.batch_size = _integer_setting("EMBEDDING_BATCH_SIZE", 10, 1)
         self.max_input_tokens = _integer_setting("EMBEDDING_MAX_INPUT_TOKENS", 8192, 1)
+        self.truncation_strategy = os.environ.get('EMBEDDING_TRUNCATION_STRATEGY', 'head+tail')
+        self.query_prefix = query_prefix or ""
+        validate_embedding_truncation(self.max_input_tokens, self.truncation_strategy, self.query_prefix)
         self.failure_log_path = os.environ.get('EMBEDDING_FAILURE_LOG_PATH', '').strip()
         self.max_concurrency = _integer_setting("EMBEDDING_MAX_CONCURRENCY", 4, 1)
         self._executor = ThreadPoolExecutor(max_workers=self.max_concurrency,
@@ -250,7 +254,6 @@ class RemoteEmbedder:
         if self.base_url.endswith("/embeddings"):
             raise ValueError("EMBEDDING_BASE_URL must end at the API base (e.g. /v1), not /embeddings")
         self.model_name = model_name
-        self.query_prefix = query_prefix or ""
         self._api_key = api_key
         self.dimension: int | None = None
         self._dimension_lock = threading.Lock()
@@ -357,6 +360,25 @@ class RemoteEmbedder:
                               planned_ms=delay * 1000):
                 time.sleep(delay)
 
+    def _prepare_input(self, text: str, prefix: str) -> str:
+        """Fit the final payload to a byte budget without splitting UTF-8 characters."""
+        budget = self.max_input_tokens * 4 - len(prefix.encode('utf-8'))
+        raw = text.encode('utf-8')
+        if len(raw) <= budget:
+            return prefix + text
+        if self.truncation_strategy == 'head-only':
+            body = raw[:budget].decode('utf-8', errors='ignore')
+        elif self.truncation_strategy == 'tail-only':
+            body = raw[-budget:].decode('utf-8', errors='ignore')
+        else:
+            remaining = budget - len(EMBEDDING_TRUNCATION_MARKER.encode('utf-8'))
+            head_bytes = (remaining + 1) // 2
+            tail_bytes = remaining // 2
+            head = raw[:head_bytes].decode('utf-8', errors='ignore')
+            tail = raw[-tail_bytes:].decode('utf-8', errors='ignore') if tail_bytes else ''
+            body = head + EMBEDDING_TRUNCATION_MARKER + tail
+        return prefix + body
+
     def _batches(self, texts: list[str]):
         # Validate all inputs first, avoiding partially submitted oversized calls.
         sizes = [len(text.encode("utf-8")) for text in texts]
@@ -411,7 +433,7 @@ class RemoteEmbedder:
             raise ValueError("Remote embedding returned invalid vectors or indices") from None
 
     @timed_operation('embedding.remote_encode_total')
-    def _encode(self, texts: list[str]) -> np.ndarray:
+    def _encode(self, texts: list[str], *, prefix: str = '') -> np.ndarray:
         import httpx
 
         if not texts:
@@ -419,7 +441,7 @@ class RemoteEmbedder:
                 return np.empty((0, self.dimension or 0), dtype=np.float32)
         # Validate every input before submitting any work; keep only a bounded
         # number of queued batches per caller. All callers share the same pool.
-        batches = list(self._batches(texts))
+        batches = list(self._batches([self._prepare_input(text, prefix) for text in texts]))
         vectors = [None] * len(batches)
         pending = {}
         next_batch = 0
@@ -447,7 +469,7 @@ class RemoteEmbedder:
         return self._encode(texts)
 
     def encode_queries(self, texts: list[str]) -> np.ndarray:
-        return self._encode([self.query_prefix + text for text in texts])
+        return self._encode(texts, prefix=self.query_prefix)
 
 
 def embedding_options(overrides: dict[str, object] | None = None) -> dict[str, object]:
