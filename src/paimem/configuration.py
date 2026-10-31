@@ -22,6 +22,8 @@ SCHEMA = {'service': {'host': ('PAIMEM_HOST', '127.0.0.1'),
                       'base_url': ('EMBEDDING_BASE_URL', 'https://your-provider.example/v1'),
                       'api_key': ('EMBEDDING_API_KEY', 'REPLACE_WITH_EMBEDDING_API_KEY'),
                       'batch_size': ('EMBEDDING_BATCH_SIZE', 10),
+                      'max_input_tokens': ('EMBEDDING_MAX_INPUT_TOKENS', 8192),
+                      'failure_log_path': ('EMBEDDING_FAILURE_LOG_PATH', ''),
                       'max_concurrency': ('EMBEDDING_MAX_CONCURRENCY', 4),
                       'rpm': ('EMBEDDING_RPM', 0),
                       'tpm': ('EMBEDDING_TPM', 0),
@@ -246,6 +248,7 @@ def prepare(path: Path, environ=None, *, scope='service'):
         if backend == 'remote':
             require('EMBEDDING_BASE_URL', 'EMBEDDING_API_KEY')
             integer('EMBEDDING_MAX_CONCURRENCY')
+            integer('EMBEDDING_MAX_INPUT_TOKENS')
             integer('EMBEDDING_RPM', 0)
             integer('EMBEDDING_TPM', 0)
         elif env.get('EMBEDDING_QUERY_PREFIX') == 'auto':

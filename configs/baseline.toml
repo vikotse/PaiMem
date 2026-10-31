@@ -56,6 +56,12 @@ base_url = "https://your-provider.example/v1"
 api_key = "REPLACE_WITH_EMBEDDING_API_KEY"
 # Maximum inputs/request / 单次最大输入条数 (EMBEDDING_BATCH_SIZE)
 batch_size = 10
+# Per-input token estimate = UTF-8 bytes / 4, including query prefix; reject oversized inputs before sending.
+# 单条 token 估算 = UTF-8 字节数 / 4，包含 query prefix；超限时本地报错，不截断。正整数。 (EMBEDDING_MAX_INPUT_TOKENS)
+max_input_tokens = 8192
+# Optional JSONL diagnostics with full failed inputs and upstream responses; empty disables recording.
+# 可选 JSONL 诊断文件，包含失败请求原文和上游响应；仅替换当前 embedding API key，不是完整脱敏。空字符串关闭。 (EMBEDDING_FAILURE_LOG_PATH)
+failure_log_path = ""
 # Batch workers shared by add/search per embedder instance / 每个 embedder 实例内 add、search 共用的批次并发上限 (EMBEDDING_MAX_CONCURRENCY)
 max_concurrency = 4
 # Configure provider quotas and divide across instances; 0 disables each limit.

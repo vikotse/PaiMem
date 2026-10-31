@@ -17,6 +17,84 @@ PACKAGES = ('paimem',)
 
 
 class EmbeddingTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.failure_path = os.path.join(directory.name, 'failures.jsonl')
+        environment = patch.dict(os.environ, {'EMBEDDING_FAILURE_LOG_PATH': self.failure_path})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def test_failure_file_preserves_request_and_redacts_embedding_api_key(self):
+        from paimem import embeddings as module
+        with patch.dict(os.environ, {'EMBEDDING_MAX_INPUT_TOKENS': '32768'}), patch('httpx.Client') as client:
+            post = client.return_value.__enter__.return_value.post
+            post.return_value = httpx.Response(400, text='invalid input; key=secret-key')
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 'secret-key', 'query: ')
+            self.addCleanup(model.close)
+            texts = ['中文\nOptions:\n答案 secret-key', 'x' * 100000]
+            with self.assertRaises(RuntimeError):
+                model.encode_queries(texts)
+            with open(self.failure_path) as stream:
+                lines = stream.readlines()
+            self.assertEqual(len(lines), 1)
+            record = json.loads(lines[0])
+            expected = json.loads(json.dumps(post.call_args.kwargs['json']).replace('secret-key', '[REDACTED]'))
+            self.assertEqual(record['request'], expected)
+            self.assertEqual(record['http_status'], 400)
+            self.assertEqual(record['attempts'], 1)
+            self.assertEqual(record['response_body'], 'invalid input; key=[REDACTED]')
+            self.assertNotIn('secret-key', lines[0])
+            self.assertEqual(os.stat(self.failure_path).st_mode & 0o777, 0o600)
+
+    def test_failure_recording_is_disabled_without_nonempty_path(self):
+        from paimem import embeddings as module
+        for value in (None, '', '  '):
+            env = {} if value is None else {'EMBEDDING_FAILURE_LOG_PATH': value}
+            with self.subTest(value=value), patch.dict(os.environ, env, clear=True), \
+                    patch('httpx.Client') as client:
+                client.return_value.__enter__.return_value.post.return_value = httpx.Response(400, text='bad')
+                model = module.RemoteEmbedder('v4', 'https://example.com/v1', 'test-key')
+                self.addCleanup(model.close)
+                with patch.object(module.os, 'open') as open_file, \
+                        patch.object(module.Path, 'mkdir') as mkdir, \
+                        self.assertRaisesRegex(RuntimeError, 'HTTP 400'):
+                    model.encode_queries(['synthetic input'])
+                open_file.assert_not_called()
+                mkdir.assert_not_called()
+        self.assertFalse(os.path.exists(self.failure_path))
+
+    def test_local_length_validation_does_not_create_failure_file(self):
+        from paimem import embeddings as module
+        with patch.dict(os.environ, {'EMBEDDING_MAX_INPUT_TOKENS': '1'}), patch('httpx.Client') as client:
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 'test-key')
+            self.addCleanup(model.close)
+            with self.assertRaisesRegex(ValueError, 'EMBEDDING_MAX_INPUT_TOKENS'):
+                model.encode_documents(['12345'])
+            client.assert_not_called()
+        self.assertFalse(os.path.exists(self.failure_path))
+
+    def test_success_does_not_create_failure_file(self):
+        from paimem import embeddings as module
+        with patch('httpx.Client') as client:
+            client.return_value.__enter__.return_value.post.return_value = httpx.Response(
+                200, json={'data': [{'index': 0, 'embedding': [1, 1]}]})
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 'secret-key')
+            self.addCleanup(model.close)
+            model.encode_queries(['ok'])
+        self.assertFalse(os.path.exists(self.failure_path))
+
+    def test_failure_file_error_does_not_replace_original_error(self):
+        from paimem import embeddings as module
+        with patch('httpx.Client') as client, patch.object(module.os, 'open', side_effect=OSError('private')):
+            client.return_value.__enter__.return_value.post.return_value = httpx.Response(400, text='bad')
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 'secret-key')
+            self.addCleanup(model.close)
+            with self.assertRaisesRegex(RuntimeError, 'HTTP 400'), self.assertLogs(module.__name__) as logs:
+                model.encode_queries(['input'])
+            self.assertIn('Could not write', ' '.join(logs.output))
+            self.assertNotIn('private', ' '.join(logs.output))
+
     def test_parallel_batches_keep_input_order(self):
         from paimem import embeddings as module
         barrier = threading.Barrier(4)
@@ -199,11 +277,58 @@ class EmbeddingTests(unittest.TestCase):
             self.assertEqual(successful[0].shape[1], model.dimension)
             self.assertEqual(model.encode_documents([]).shape, (0, model.dimension))
 
+    def test_max_input_tokens_checks_utf8_bytes_and_query_prefix_before_http(self):
+        from paimem import embeddings as module
+        requests = []
+
+        def handler(request):
+            batch = json.loads(request.content)['input']
+            requests.append(batch)
+            return httpx.Response(200, json={'data': [
+                {'index': i, 'embedding': [1, 2]} for i in range(len(batch))]})
+
+        real_client = httpx.Client
+        with patch.dict(os.environ, {'EMBEDDING_MAX_INPUT_TOKENS': '2',
+                                    'EMBEDDING_BATCH_SIZE': '1'}, clear=True), \
+                patch('httpx.Client', side_effect=lambda **kw: real_client(
+                    transport=httpx.MockTransport(handler), **kw)) as client:
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's', query_prefix='问:')
+            self.addCleanup(model.close)
+            # Eight bytes is exactly two estimated tokens, regardless of character count.
+            for text in ['12345678', '中文ab', '😀😀']:
+                self.assertEqual(model.encode_documents([text]).shape, (1, 2))
+                self.assertEqual(requests[-1], [text])
+            model.encode_queries(['1234'])
+            self.assertEqual(requests[-1], ['问:1234'])
+            client.reset_mock()
+            sent = len(requests)
+            for text in ['123456789', '中文abc', '😀😀a']:
+                with self.subTest(text=text), self.assertRaisesRegex(
+                        ValueError, r'input 2.*EMBEDDING_MAX_INPUT_TOKENS.*estimated_tokens=2.25; limit=2'):
+                    model.encode_documents(['ok', text])
+            with self.assertRaisesRegex(ValueError, r'input 1.*estimated_tokens=2.25; limit=2'):
+                model.encode_queries(['12345'])
+            self.assertEqual(len(requests), sent)
+            client.assert_not_called()
+
+    def test_default_max_input_tokens_boundary(self):
+        from paimem import embeddings as module
+        with patch.dict(os.environ, {}, clear=True):
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
+            self.addCleanup(model.close)
+            text = 'x' * 32768
+            self.assertEqual(list(model._batches([text])), [[text]])
+            with patch('httpx.Client') as client, self.assertRaisesRegex(
+                    ValueError, r'input 2.*estimated_tokens=8192.25; limit=8192'):
+                model.encode_documents(['ok', text + 'x'])
+            client.assert_not_called()
+
     def test_batch_and_quota_validation(self):
         from paimem import embeddings as module
         for key, values in {
             'EMBEDDING_BATCH_SIZE': ['0', '-1', '1.5', 'bad'],
             'EMBEDDING_MAX_CONCURRENCY': ['0', '-1', '1.5', 'bad'],
+            'EMBEDDING_MAX_INPUT_TOKENS': ['0', '-1', '1.5', 'bad'],
             'EMBEDDING_RPM': ['-1', '1.5', 'bad'],
             'EMBEDDING_TPM': ['-1', '1.5', 'bad'],
         }.items():
@@ -219,6 +344,7 @@ class EmbeddingTests(unittest.TestCase):
             self.addCleanup(model.close)
             self.assertEqual(model.batch_size, 10)
             self.assertEqual(model.max_concurrency, 4)
+            self.assertEqual(model.max_input_tokens, 8192)
         for value, expected in [(None, 64), ('3', 3)]:
             env = {} if value is None else {'EMBEDDING_BATCH_SIZE': value}
             fake_model = SimpleNamespace(device='cpu', encode=lambda texts, **kw: np.ones((len(texts), 2)))

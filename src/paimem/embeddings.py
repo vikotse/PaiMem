@@ -14,6 +14,8 @@ from collections import deque
 from email.utils import parsedate_to_datetime
 import os
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Protocol
 
 import numpy as np
@@ -23,6 +25,7 @@ from .mps_runtime import inference_guard
 
 _timing_context = ContextVar('paimem_timing_context', default=None)
 _timing_logger = logging.getLogger('paimem.timing')
+_failure_log_lock = threading.Lock()
 
 
 @contextmanager
@@ -228,6 +231,8 @@ class RemoteEmbedder:
     def __init__(self, model_name: str, base_url: str, api_key: str,
                  query_prefix: str | None = None) -> None:
         self.batch_size = _integer_setting("EMBEDDING_BATCH_SIZE", 10, 1)
+        self.max_input_tokens = _integer_setting("EMBEDDING_MAX_INPUT_TOKENS", 8192, 1)
+        self.failure_log_path = os.environ.get('EMBEDDING_FAILURE_LOG_PATH', '').strip()
         self.max_concurrency = _integer_setting("EMBEDDING_MAX_CONCURRENCY", 4, 1)
         self._executor = ThreadPoolExecutor(max_workers=self.max_concurrency,
                                             thread_name_prefix='embedding')
@@ -252,6 +257,40 @@ class RemoteEmbedder:
         self.identity = "remote:" + json.dumps(
             [self.base_url, model_name, self.query_prefix], separators=(",", ":"))
 
+    def _record_failure(self, batch, batch_number, attempt, reason, status, response_text):
+        """Record failed inputs only when an operator configures a diagnostic path."""
+        if not self.failure_log_path:
+            return
+        record = {
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'batch': batch_number, 'attempts': attempt, 'reason': reason,
+            'http_status': status,
+            'request': {'model': self.model_name, 'input': batch, 'encoding_format': 'float'},
+            'response_body': response_text,
+        }
+        # Redact this embedder's API key from text values, including upstream echoes.
+        # Other credentials and personal data in inputs/responses are not sanitized.
+        def redact(value):
+            if isinstance(value, str):
+                return value.replace(self._api_key, '[REDACTED]') if self._api_key else value
+            if isinstance(value, list):
+                return [redact(item) for item in value]
+            if isinstance(value, dict):
+                return {key: redact(item) for key, item in value.items()}
+            return value
+        try:
+            line = json.dumps(redact(record), ensure_ascii=True) + '\n'
+            path = Path(self.failure_log_path)
+            with _failure_log_lock:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                # Restrict newly created files because inputs may contain private text.
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+                with os.fdopen(fd, 'a', encoding='utf-8') as stream:
+                    stream.write(line)
+        except Exception as error:
+            logging.getLogger(__name__).error(
+                'Could not write remote embedding failure record (%s)', type(error).__name__)
+
     def _request_batch(self, client, batch: list[str], batch_number: int):
         import httpx
 
@@ -265,6 +304,8 @@ class RemoteEmbedder:
                               rpm_blocked=False, tpm_blocked=False) as quota:
                 reservation = self._limiter.acquire(tokens, quota)
             retry_after = 0.0
+            status = None
+            response_text = None
             try:
                 with timing_stage('embedding.http', batch=batch_number, attempt=attempt,
                                   inputs=len(batch)) as timing:
@@ -297,10 +338,13 @@ class RemoteEmbedder:
                             self._limiter.reconcile(reservation, actual)
                     return body
                 reason = f"HTTP {response.status_code}"
+                status = response.status_code
+                response_text = response.text
                 retryable = response.status_code in {429, 502, 503, 504}
                 retry_after = _retry_after(response.headers.get("Retry-After"))
                 response.close()
             if not retryable or attempt == max_attempts:
+                self._record_failure(batch, batch_number, attempt, reason, status, response_text)
                 logger.error("Remote embedding failed batch=%d attempt=%d/%d reason=%s",
                              batch_number, attempt, max_attempts, reason)
                 raise RuntimeError(
@@ -316,6 +360,14 @@ class RemoteEmbedder:
     def _batches(self, texts: list[str]):
         # Validate all inputs first, avoiding partially submitted oversized calls.
         sizes = [len(text.encode("utf-8")) for text in texts]
+        for index, size in enumerate(sizes, start=1):
+            # Compare bytes directly so fractional token estimates cannot round down.
+            if size > self.max_input_tokens * 4:
+                raise ValueError(
+                    f"Embedding input {index} exceeds EMBEDDING_MAX_INPUT_TOKENS "
+                    f"(estimated_tokens={size / 4:g}; limit={self.max_input_tokens}; "
+                    "estimate=UTF-8 bytes / 4)"
+                )
         tpm = self._limiter.tpm
         if tpm and any(size > tpm for size in sizes):
             raise ValueError("A single embedding input exceeds EMBEDDING_TPM (UTF-8 byte estimate)")
