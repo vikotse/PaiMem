@@ -42,6 +42,45 @@ class LauncherTests(unittest.TestCase):
         _, result = prepare(ROOT / 'configs/default.toml', {**env, 'EMBEDDING_BATCH_SIZE': '3'})
         self.assertEqual(result['EMBEDDING_BATCH_SIZE'], '3')
 
+    def test_remote_max_input_tokens_configuration(self):
+        env = {**self.env, 'EMBEDDING_BACKEND': 'remote',
+               'EMBEDDING_BASE_URL': 'https://example.com/v1', 'EMBEDDING_API_KEY': 'test'}
+        for profile in ('default', 'baseline'):
+            _, result = prepare(ROOT / f'configs/{profile}.toml', env)
+            self.assertEqual(result['EMBEDDING_MAX_INPUT_TOKENS'], '8192')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.toml'
+            path.write_text('[embedding.remote]\nmax_input_tokens = 4096\n')
+            _, result = prepare(path, env)
+            self.assertEqual(result['EMBEDDING_MAX_INPUT_TOKENS'], '4096')
+            _, result = prepare(path, {**env, 'EMBEDDING_MAX_INPUT_TOKENS': '2048'})
+            self.assertEqual(result['EMBEDDING_MAX_INPUT_TOKENS'], '2048')
+            for value in ('0', '-1', '1.5', 'bad'):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    prepare(path, {**env, 'EMBEDDING_MAX_INPUT_TOKENS': value})
+        _, result = prepare(ROOT / 'configs/default.toml', self.env)
+        self.assertNotIn('EMBEDDING_MAX_INPUT_TOKENS', result)
+
+    def test_remote_failure_log_path_configuration(self):
+        env = {**self.env, 'EMBEDDING_BACKEND': 'remote',
+               'EMBEDDING_BASE_URL': 'https://example.com/v1', 'EMBEDDING_API_KEY': 'test'}
+        for profile in ('default', 'baseline'):
+            _, result = prepare(ROOT / f'configs/{profile}.toml', env)
+            self.assertEqual(result['EMBEDDING_FAILURE_LOG_PATH'], '')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.toml'
+            path.write_text('[embedding.remote]\nfailure_log_path = "artifacts/embedding-failures.jsonl"\n')
+            _, result = prepare(path, env)
+            self.assertEqual(result['EMBEDDING_FAILURE_LOG_PATH'], 'artifacts/embedding-failures.jsonl')
+            for value in ('artifacts/custom-failures.jsonl', ''):
+                _, result = prepare(path, {**env, 'EMBEDDING_FAILURE_LOG_PATH': value})
+                self.assertEqual(result['EMBEDDING_FAILURE_LOG_PATH'], value)
+            path.write_text('[embedding.remote]\nfailure_log_path = false\n')
+            with self.assertRaises(ValueError):
+                prepare(path, env)
+        _, result = prepare(ROOT / 'configs/default.toml', self.env)
+        self.assertNotIn('EMBEDDING_FAILURE_LOG_PATH', result)
+
     def test_active_placeholder_credentials_only(self):
         with self.assertRaisesRegex(ValueError, r'\[service\].api_key'):
             prepare(ROOT / 'configs/default.toml', {})
