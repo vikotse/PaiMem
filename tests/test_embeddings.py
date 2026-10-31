@@ -64,14 +64,16 @@ class EmbeddingTests(unittest.TestCase):
                 mkdir.assert_not_called()
         self.assertFalse(os.path.exists(self.failure_path))
 
-    def test_local_length_validation_does_not_create_failure_file(self):
+    def test_truncation_success_does_not_create_failure_file(self):
         from paimem import embeddings as module
-        with patch.dict(os.environ, {'EMBEDDING_MAX_INPUT_TOKENS': '1'}), patch('httpx.Client') as client:
+        with patch.dict(os.environ, {'EMBEDDING_MAX_INPUT_TOKENS': '1',
+                                    'EMBEDDING_TRUNCATION_STRATEGY': 'head-only'}), patch('httpx.Client') as client:
+            post = client.return_value.__enter__.return_value.post
+            post.return_value = httpx.Response(200, json={'data': [{'index': 0, 'embedding': [1, 1]}]})
             model = module.RemoteEmbedder('v4', 'https://example.com/v1', 'test-key')
             self.addCleanup(model.close)
-            with self.assertRaisesRegex(ValueError, 'EMBEDDING_MAX_INPUT_TOKENS'):
-                model.encode_documents(['12345'])
-            client.assert_not_called()
+            model.encode_documents(['12345'])
+            self.assertEqual(post.call_args.kwargs['json']['input'], ['1234'])
         self.assertFalse(os.path.exists(self.failure_path))
 
     def test_success_does_not_create_failure_file(self):
@@ -277,51 +279,86 @@ class EmbeddingTests(unittest.TestCase):
             self.assertEqual(successful[0].shape[1], model.dimension)
             self.assertEqual(model.encode_documents([]).shape, (0, model.dimension))
 
-    def test_max_input_tokens_checks_utf8_bytes_and_query_prefix_before_http(self):
+    def test_truncation_strategies_bound_final_http_payload(self):
         from paimem import embeddings as module
-        requests = []
+        marker = '\n[... truncated ...]\n'
+        expected_queries = {
+            'head-only': '问:abcdefghijklmnopqrstuvwxyzabcdefghij',
+            'tail-only': '问:qrstuvwxyzabcdefghijklmnopqrstuvwxyz',
+            'head+tail': '问:abcdefgh' + marker + 'tuvwxyz',
+        }
+        expected_documents = {
+            'head-only': 'abcdefghijklmnopqrstuvwxyzabcdefghijklmn',
+            'tail-only': 'mnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz',
+            'head+tail': 'abcdefghij' + marker + 'rstuvwxyz',
+        }
+        for strategy in expected_queries:
+            requests = []
+            def handler(request):
+                batch = json.loads(request.content)['input']
+                self.assertTrue(all(len(t.encode('utf-8')) <= 40 for t in batch))
+                requests.append(batch)
+                return httpx.Response(200, json={'data': [
+                    {'index': i, 'embedding': [1, 2]} for i in range(len(batch))]})
+            real_client = httpx.Client
+            with self.subTest(strategy=strategy), patch.dict(os.environ, {
+                    'EMBEDDING_MAX_INPUT_TOKENS': '10', 'EMBEDDING_TPM': '40',
+                    'EMBEDDING_TRUNCATION_STRATEGY': strategy}, clear=True), \
+                    patch('httpx.Client', side_effect=lambda **kw: real_client(
+                        transport=httpx.MockTransport(handler), **kw)):
+                model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's', query_prefix='问:')
+                self.addCleanup(model.close)
+                # Record quota reservations without waiting: reserve bytes for the truncated payload only.
+                with patch.object(model._limiter, 'acquire', return_value=None) as acquire:
+                    model.encode_queries(['abcdefghijklmnopqrstuvwxyz' * 3])
+                    self.assertEqual(requests[-1], [expected_queries[strategy]])
+                    self.assertEqual(acquire.call_args.args[0], 40)
+                    model.encode_documents(['abcdefghijklmnopqrstuvwxyz' * 3])
+                    self.assertEqual(requests[-1], [expected_documents[strategy]])
+                    for text in ['short', 'a' * 36, '中' * 12, '😀' * 9]:
+                        model.encode_queries([text])
+                        self.assertEqual(requests[-1], ['问:' + text])
+                    for text in ['中' * 30, '😀' * 30, 'a' + '中😀' * 30 + 'z']:
+                        model.encode_queries([text])
+                        output = requests[-1][0]
+                        self.assertTrue(output.startswith('问:'))
+                        self.assertEqual(output.count('问:'), 1)
+                        self.assertNotIn('�', output)
+                        if strategy == 'head+tail':
+                            self.assertEqual(output.count(marker), 1)
 
-        def handler(request):
-            batch = json.loads(request.content)['input']
-            requests.append(batch)
-            return httpx.Response(200, json={'data': [
-                {'index': i, 'embedding': [1, 2]} for i in range(len(batch))]})
-
-        real_client = httpx.Client
-        with patch.dict(os.environ, {'EMBEDDING_MAX_INPUT_TOKENS': '2',
-                                    'EMBEDDING_BATCH_SIZE': '1'}, clear=True), \
-                patch('httpx.Client', side_effect=lambda **kw: real_client(
-                    transport=httpx.MockTransport(handler), **kw)) as client:
-            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's', query_prefix='问:')
-            self.addCleanup(model.close)
-            # Eight bytes is exactly two estimated tokens, regardless of character count.
-            for text in ['12345678', '中文ab', '😀😀']:
-                self.assertEqual(model.encode_documents([text]).shape, (1, 2))
-                self.assertEqual(requests[-1], [text])
-            model.encode_queries(['1234'])
-            self.assertEqual(requests[-1], ['问:1234'])
-            client.reset_mock()
-            sent = len(requests)
-            for text in ['123456789', '中文abc', '😀😀a']:
-                with self.subTest(text=text), self.assertRaisesRegex(
-                        ValueError, r'input 2.*EMBEDDING_MAX_INPUT_TOKENS.*estimated_tokens=2.25; limit=2'):
-                    model.encode_documents(['ok', text])
-            with self.assertRaisesRegex(ValueError, r'input 1.*estimated_tokens=2.25; limit=2'):
-                model.encode_queries(['12345'])
-            self.assertEqual(len(requests), sent)
-            client.assert_not_called()
-
-    def test_default_max_input_tokens_boundary(self):
+    def test_default_truncation_boundary_and_minimum_budget(self):
         from paimem import embeddings as module
         with patch.dict(os.environ, {}, clear=True):
             model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's')
             self.addCleanup(model.close)
+            self.assertEqual(model.truncation_strategy, 'head+tail')
             text = 'x' * 32768
-            self.assertEqual(list(model._batches([text])), [[text]])
-            with patch('httpx.Client') as client, self.assertRaisesRegex(
-                    ValueError, r'input 2.*estimated_tokens=8192.25; limit=8192'):
-                model.encode_documents(['ok', text + 'x'])
-            client.assert_not_called()
+            self.assertEqual(model._prepare_input(text, ''), text)
+            output = model._prepare_input(text + 'y', '')
+            self.assertEqual(len(output.encode()), 32768)
+            self.assertIn('\n[... truncated ...]\n', output)
+            self.assertTrue(output.endswith('y'))
+        with patch.dict(os.environ, {'EMBEDDING_MAX_INPUT_TOKENS': '6'}, clear=True):
+            model = module.RemoteEmbedder('v4', 'https://example.com/v1', 's', query_prefix='q:')
+            self.addCleanup(model.close)
+            # One byte remains for the head; a zero-byte tail must not include the entire input.
+            self.assertEqual(model._prepare_input('abcdefghijklmnopqrstuvwxyz', 'q:'),
+                             'q:a\n[... truncated ...]\n')
+
+    def test_invalid_truncation_configuration_before_worker_creation(self):
+        from paimem import embeddings as module
+        cases = [({'EMBEDDING_TRUNCATION_STRATEGY': 'invalid'}, '', 'EMBEDDING_TRUNCATION_STRATEGY'),
+                 ({'EMBEDDING_MAX_INPUT_TOKENS': '5'}, '', 'EMBEDDING_MAX_INPUT_TOKENS'),
+                 ({'EMBEDDING_MAX_INPUT_TOKENS': '6'}, '问:', 'EMBEDDING_MAX_INPUT_TOKENS'),
+                 ({'EMBEDDING_MAX_INPUT_TOKENS': '1', 'EMBEDDING_TRUNCATION_STRATEGY': 'tail-only'},
+                  '问:', 'EMBEDDING_MAX_INPUT_TOKENS')]
+        for env, prefix, error in cases:
+            with self.subTest(env=env, prefix=prefix), patch.dict(os.environ, env, clear=True), \
+                    patch.object(module, 'ThreadPoolExecutor') as executor:
+                with self.assertRaisesRegex(ValueError, error):
+                    module.RemoteEmbedder('v4', 'https://example.com/v1', 's', query_prefix=prefix)
+                executor.assert_not_called()
 
     def test_batch_and_quota_validation(self):
         from paimem import embeddings as module

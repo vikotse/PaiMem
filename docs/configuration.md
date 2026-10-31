@@ -110,7 +110,8 @@ Both profiles group settings by feature, with bilingual parameter comments. Expo
 |---|---:|---|
 | `EMBEDDING_BATCH_SIZE` | Local: 64; remote: 10 | Positive integer; maximum inputs per batch. Respect the provider's per-request limit. |
 | `EMBEDDING_MAX_CONCURRENCY` | 4 | Positive integer; batch workers shared by all calls on one remote embedder instance. |
-| `EMBEDDING_MAX_INPUT_TOKENS` | 8192 | Positive integer; remote per-input limit, estimated as UTF-8 bytes / 4 including the query prefix. TOML: `[embedding.remote].max_input_tokens`. All inputs are checked before any batch is sent; an oversized input raises an error without truncation. This estimate does not replace the provider's tokenizer limit. |
+| `EMBEDDING_MAX_INPUT_TOKENS` | 8192 | Positive integer; remote per-input limit, estimated as UTF-8 bytes / 4 including the query prefix. TOML: `[embedding.remote].max_input_tokens`. Oversized inputs are truncated before batching; the final payload, including the prefix and omission marker, must fit this limit. This estimate does not replace the provider's tokenizer limit. |
+| `EMBEDDING_TRUNCATION_STRATEGY` | head+tail | Remote input truncation: `head-only`, `tail-only`, or `head+tail`. TOML: `[embedding.remote].truncation_strategy`. |
 | `EMBEDDING_RPM` | 1500 | Nonnegative integer; remote HTTP attempts per rolling 60 seconds. Zero disables this limit. |
 | `EMBEDDING_TPM` | 1800000 | Nonnegative integer; remote token budget per rolling 60 seconds, estimated before sending and corrected from reported usage. Zero disables this limit. |
 
@@ -134,13 +135,19 @@ Remote batches run concurrently and results are restored to input order. Query, 
 The limiter is thread-safe and shared by document and query calls on the same embedder instance. It does not coordinate multiple processes, instances, or other clients sharing the account; divide quotas accordingly. Limits are read at embedder creation and require a service restart to change. `--check` validates active embedding batch size, concurrency and quota limits.
 
 
+## Remote input truncation
+
+The final input budget is `max_input_tokens * 4` UTF-8 bytes. Query calls first reserve the full query prefix; document calls do not add it. Inputs that fit are unchanged. For oversized inputs, `head-only` keeps the beginning and `tail-only` keeps the end. `head+tail` first reserves the literal marker `\n[... truncated ...]\n`, then divides the remaining body budget equally between the head and tail, giving an odd extra byte to the head. Cuts preserve complete UTF-8 characters, so some byte budget may remain unused. The prefix appears once, before the resulting body.
+
+All strategies enforce the final limit including the prefix and marker. A configuration that leaves no body budget after the required prefix and marker is rejected at startup, including by `--check`. Batching and TPM reservations use the truncated payload. Only the embedding input is shortened; stored text and other retrieval stages retain their original inputs. Changing the strategy or limit can change vectors for long documents; rebuild affected stored embeddings when consistent representations are required. These settings take effect after a restart and apply only to the remote backend. The bytes / 4 estimate is not the provider's actual tokenizer count.
+
 ## Remote embedding failure diagnostics
 
 Failure capture is disabled by default. To enable it, set `failure_log_path` in `[embedding.remote]` to a JSONL file path, or export `EMBEDDING_FAILURE_LOG_PATH`. An empty or whitespace-only value disables capture; an exported empty value also overrides a configured path. The setting is read when the embedder is created, so restart the service after changing it. Relative paths are resolved from the service's working directory.
 
 For example, add `failure_log_path = "artifacts/embedding-failures.jsonl"` to the existing `[embedding.remote]` section. Parent directories are created when a failure is recorded. Newly created files use owner-only read/write permissions (`0600`); permissions of existing files are not changed.
 
-Each record contains the UTC timestamp, batch number, attempt count, failure reason, HTTP status when available, full embedding request (including any query prefix), and upstream response body when available. A record is appended when a remote request fails permanently or exhausts retries. Local input-length validation and invalid vectors in successful HTTP responses do not produce failure records. A diagnostic write failure is logged without replacing the original request error.
+Each record contains the UTC timestamp, batch number, attempt count, failure reason, HTTP status when available, embedding request as sent (after truncation and including any query prefix), and upstream response body when available. A record is appended when a remote request fails permanently or exhausts retries. Truncation alone, local validation errors, and invalid vectors in successful HTTP responses do not produce failure records. A diagnostic write failure is logged without replacing the original request error.
 
 Only occurrences of the configured embedding API key in text values are replaced with `[REDACTED]`. This is not general-purpose sanitization: other credentials, personal information, and document contents may remain. Treat these files as private operational data, restrict access, set retention or rotation outside the service, and exclude them from commits and public issue attachments. Tests use synthetic inputs; real request captures are not required to run the test suite.
 
