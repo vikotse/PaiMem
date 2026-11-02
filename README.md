@@ -99,7 +99,7 @@ export MEMORY_API_KEY='YOUR_MEMORY_SERVICE_KEY'
 |---|---|---|
 | GET | `/health` | Health and memory counts; no authentication |
 | POST | `/add` | Synchronous ingestion; searchable immediately after success |
-| POST | `/search` | Retrieve by user_id; top_k is 1–100 |
+| POST | `/search` | Retrieve by `user_id`; positive `top_k`, capped by `service.search_max_top_k` (default 100; see [search result limit](docs/configuration.md#search-result-limit)) |
 | GET | `/config` | Inspect effective settings without exposing keys |
 | POST | `/config` | Update supported runtime switches and parameters |
 | POST | `/clear` | Clear the entire dedicated memory database; authentication required |

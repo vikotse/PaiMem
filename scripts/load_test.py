@@ -359,8 +359,6 @@ def main(argv=None):
         if (url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password
                 or url.query or url.fragment or url.path not in ('', '/')):
             raise ValueError('--base-url must be a server root without credentials or a path')
-        if args.top_k > 100:
-            raise ValueError('--top-k must be <= 100')
         records = load_workload(args)
         if args.output and args.output.exists():
             raise ValueError('--output already exists; choose a new file')
