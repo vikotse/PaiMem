@@ -56,7 +56,7 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
     options: list[str] | None = None
     user_id: str = Field(min_length=1)
-    top_k: int = Field(gt=0, le=100)
+    top_k: int = Field(gt=0)
     debug_output_path: str | None = Field(default=None, min_length=1)
     include_recall_queue: bool = False
 
@@ -670,8 +670,19 @@ def require_management_api_key(
     require_api_key(authorization, x_api_key)
 
 
+def _search_max_top_k() -> int:
+    try:
+        value = int(os.environ.get("MEMORY_SEARCH_MAX_TOP_K", "100"))
+    except ValueError:
+        raise ValueError("MEMORY_SEARCH_MAX_TOP_K must be a positive integer") from None
+    if value <= 0:
+        raise ValueError("MEMORY_SEARCH_MAX_TOP_K must be a positive integer")
+    return value
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    _search_max_top_k()
     if os.environ.get("SKIP_MODEL_STARTUP", "false").lower() != "true":
         get_store()
     yield
@@ -779,16 +790,26 @@ def add_memory(payload: AddRequest, store: Annotated[SQLiteMemoryStore, Depends(
 def search_memory(payload: SearchRequest, store: Annotated[SQLiteMemoryStore, Depends(get_store)],
                   request: Request) -> SearchResponse:
     path = _local_debug_path(request, payload.debug_output_path) if payload.debug_output_path else None
+    top_k = min(_search_max_top_k(), payload.top_k)
     if path is None:
-        hits = store.search(payload.user_id, payload.query, payload.top_k, payload.options)
+        hits = store.search(payload.user_id, payload.query, top_k, payload.options)
     else:
-        hits, detail = store.search(payload.user_id, payload.query, payload.top_k, payload.options,
+        hits, detail = store.search(payload.user_id, payload.query, top_k, payload.options,
                                     diagnostics=True)
+        if len(hits) > top_k:
+            # Conflict summaries can add a result beyond the evidence budget.
+            detail["returned_count"] = top_k
+            detail["final_results"] = detail["final_results"][:top_k]
+            for candidate in detail["candidates"]:
+                if candidate.get("returned_rank") is not None and candidate["returned_rank"] > top_k:
+                    candidate["returned_rank"] = None
+                if "returned_ranks" in candidate:
+                    candidate["returned_ranks"] = [rank for rank in candidate["returned_ranks"] if rank <= top_k]
         _write_debug(path, detail)
     # Only offline callers opt into queue metadata. Construct the four public
     # fields explicitly so diagnostic metadata is returned only when requested.
     items = []
-    for hit in hits:
+    for hit in hits[:top_k]:
         fields = dict(id=hit.id, content=hit.content, score=hit.score, created_at=hit.created_at)
         if payload.include_recall_queue or path is not None:
             fields["recall_queue"] = hit.recall_queue

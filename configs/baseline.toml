@@ -13,6 +13,9 @@
 host = "127.0.0.1"
 # Listening port / 监听端口 (PAIMEM_PORT)
 port = 8000
+# Maximum search results; positive integer / 搜索返回上限，正整数 (MEMORY_SEARCH_MAX_TOP_K)
+# Effective top_k = min(search_max_top_k, requested top_k) / 实际检索条数取配置与请求的较小值。
+search_max_top_k = 100
 # Required: choose your secret / 必填：设置自己的服务密钥 (MEMORY_API_KEY)
 api_key = "REPLACE_WITH_MEMORY_API_KEY"
 # SQLite path / SQLite 路径 (MEMORY_DB_PATH)

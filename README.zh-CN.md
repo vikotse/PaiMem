@@ -101,7 +101,7 @@ export MEMORY_API_KEY='YOUR_MEMORY_SERVICE_KEY'
 |---|---|---|
 | GET | `/health` | 服务健康及记忆数量，无须鉴权 |
 | POST | `/add` | 同步写入，成功后立即可检索 |
-| POST | `/search` | 按 user_id 检索，top_k 为 1–100 |
+| POST | `/search` | 按 `user_id` 检索，`top_k` 为正整数，受 `service.search_max_top_k` 限制（默认 100；详见[搜索返回上限](docs/configuration.zh-CN.md#搜索返回上限)） |
 | GET | `/config` | 查看生效配置，不返回密钥 |
 | POST | `/config` | 更新受支持的运行时开关和参数 |
 | POST | `/clear` | 清空整个专用记忆数据库，需鉴权 |

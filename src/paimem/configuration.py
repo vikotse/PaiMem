@@ -26,6 +26,7 @@ def validate_embedding_truncation(max_tokens: int, strategy: str, query_prefix: 
 # TOML field -> environment variable and default value/type.
 SCHEMA = {'service': {'host': ('PAIMEM_HOST', '127.0.0.1'),
              'port': ('PAIMEM_PORT', 8000),
+             'search_max_top_k': ('MEMORY_SEARCH_MAX_TOP_K', 100),
              'api_key': ('MEMORY_API_KEY', 'REPLACE_WITH_MEMORY_API_KEY'),
              'db_path': ('MEMORY_DB_PATH', 'artifacts/memory.db'),
              'diagnostics_dir': ('MEMORY_DIAGNOSTICS_DIR', 'artifacts/diagnostics')},
@@ -255,6 +256,7 @@ def prepare(path: Path, environ=None, *, scope='service'):
         raise ValueError('Enable [reranker].enabled before starting/preparing vLLM')
     if scope != 'vllm':
         fill('service')
+        integer('MEMORY_SEARCH_MAX_TOP_K')
         require('MEMORY_API_KEY', 'MEMORY_DB_PATH', 'PAIMEM_HOST', 'MEMORY_DIAGNOSTICS_DIR')
         fill('embedding')
         backend = choice('EMBEDDING_BACKEND', ('local', 'remote'))

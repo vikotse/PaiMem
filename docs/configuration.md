@@ -33,6 +33,14 @@ unset config_exports
 
 `--shell` emits safely quoted exports **including credentials**; capture it as above, do not print or log it. TOML itself is data and is never executed as shell code.
 
+## Search result limit
+
+`service.search_max_top_k` (environment override: `MEMORY_SEARCH_MAX_TOP_K`) must be a positive integer. Its default is `100`; operators can configure a lower or higher limit. `/search` accepts positive integer `top_k` values and uses `min(service.search_max_top_k, top_k)` as the effective retrieval budget. Requests above the configured limit are capped; zero and negative values return 422.
+
+The response contains at most the effective retrieval budget and may contain fewer results. Any generated conflict summary counts toward this total. If the results exceed the budget, entries at the end are omitted while the existing order is preserved. Diagnostic final results reflect the capped response.
+
+Set this in the existing `[service]` section and restart the service to apply it. Configurations that omit the field use `100`; this setting is not part of the runtime `/config` endpoint.
+
 ## Configuration sections
 
 | Section | Settings kept together |
