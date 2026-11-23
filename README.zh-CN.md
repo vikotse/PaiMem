@@ -22,6 +22,8 @@ PaiMem 将长期记忆读取建模为**查询条件下的上下文证据选择**
      → 可选排名融合 → 同会话上下文扩展 / 打包 → 证据
 ```
 
+![PaiMem 用 RRF 融合向量检索与 BM25 的结果，结合上下文重排片段，再由 MemPursuit 选择互补证据。](docs/assets/diagrams/search-pipeline.zh-CN.png)
+
 SIRA 查询扩展、NEAR 残差检索、角色过滤、冲突证据核验和长问题处理均为可选策略。Search 返回证据，回答生成与裁判属于独立评测流程。各策略细节见 [策略文档](docs/configuration.zh-CN.md)。
 
 ## 1. 快速开始
@@ -154,6 +156,12 @@ PYTHONHASHSEED=0 uv run python scripts/run_aml_e2e.py \
 ```
 
 相同配置和输出目录支持续跑；更换模型、数据或策略必须使用新的输出目录。不要在续跑中清空记忆。评测结果需同时记录代码版本、模型、数据和配置，详见评测复现文档。
+
+### PaiMem 的离线调优方法
+
+开发阶段，PaiMem 团队借鉴 [ModularRSI](https://arxiv.org/abs/2609.14857) 的思路，通过离线递归自我改进（recursive self-improvement，RSI）逐轮测试单项改动，选定检索方案。
+
+![RSI 每轮只修改检索流程中的一项，比较召回表现与返回长度，再用独立验证集评估候选方案。](docs/assets/diagrams/rsi-workflow.zh-CN.png)
 
 ## 4. 效率对比
 

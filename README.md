@@ -20,6 +20,8 @@ PaiMem formulates long-term memory reading as **query-conditioned selection of c
       → optional rank fusion → same-session context expansion / packing → evidence
 ```
 
+![PaiMem merges dense and BM25 results with RRF, reranks passages in context, and uses MemPursuit to select complementary evidence.](docs/assets/diagrams/search-pipeline.en.png)
+
 SIRA query expansion, NEAR residual retrieval, role filtering, conflict-evidence checks, and long-question processing are optional. Search returns evidence; answer generation and judging are part of the separate evaluation workflow. See [configuration and strategies](docs/configuration.md).
 
 ## 1. Quick start
@@ -152,6 +154,12 @@ PYTHONHASHSEED=0 uv run python scripts/run_aml_e2e.py \
 ```
 
 The same configuration and output directory support resuming. Use a new output directory when changing models, data, or strategies. Do not clear memory during a resumed run. Record the code version, models, data, and configuration alongside results, as described in the evaluation guide.
+
+### How PaiMem was tuned offline
+
+During development, the PaiMem team selected its retrieval pipeline by testing one change at a time in an offline recursive self-improvement (RSI) loop inspired by [ModularRSI](https://arxiv.org/abs/2609.14857).
+
+![Each RSI iteration changes one part of the retrieval pipeline and compares recall and output length. Candidates are validated on a separate dataset.](docs/assets/diagrams/rsi-workflow.en.png)
 
 ## 4. Efficiency
 
