@@ -2,11 +2,12 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-**融合混合检索与上下文感知证据选择的长期记忆框架**
+PaiMem 是一个面向 Agent 的长期记忆检索框架。当历史对话反复提及同一事实时，高度相关的片段可能占据多个 top-k 名额，挤掉回答问题所需的其他证据。PaiMem 通过混合检索召回原始对话片段，结合相邻上下文评估相关性，并根据每个候选片段能为已选证据补充哪些信息来选择下一段。
 
-*Long-Term Memory with Hybrid Retrieval and Context-Aware Evidence Selection*
+- 在 AML 第二期文本记忆赛道的 89 个参评开源方案中，PaiMem v0.1.0 以 60.41 分的综合成绩**排名第 4**。[第二期榜单](https://agentmemoryleaderboard.ai/results/cycle-2/#academic-textual)
+- 在 LoCoMo-refined 全量数据的本地评测中，以 AML 第一期文本记忆开源方案榜冠军 InvMem 的 small2big 修改版为基线，PaiMem 在返回记忆文本长度相近的条件下，将 Evidence Recall@100 从 **91.51%** 提升至 **97.24%**（**+5.73 个百分点**）。[第一期榜单](https://agentmemories.ai/results/cycle-1/#academic-textual)
 
-PaiMem 保存原始对话片段，通过语义与词法混合召回、上下文重排、证据选择和上下文重建，为下游问答提供可追溯的历史证据。提供 SQLite 持久化、用户隔离的 HTTP API，以及 Recall 和端到端评测工具。
+[快速开始](#1-快速开始) · [API 示例](#2-接口与请求示例) · [评测结果与复现](#3-评测结果与复现)
 
 ## 核心思路
 
@@ -16,15 +17,9 @@ PaiMem 将长期记忆读取建模为**查询条件下的上下文证据选择**
 - **解耦检索粒度与判断粒度**：以细粒度片段定位信息，以上下文扩展后的表示进行相关性判断和证据选择。
 - **联合考虑相关性与互补性**：通过重排评估候选相关性，并以 MemPursuit 的查询重构残差作为未覆盖信息的代理，选择补充性证据。
 
-```text
-/add: 消息 → 分块 / embedding → SQLite
-/search: 查询 → Dense + BM25 → RRF → 上下文重排 → MemPursuit
-     → 可选排名融合 → 同会话上下文扩展 / 打包 → 证据
-```
-
 ![PaiMem 用 RRF 融合向量检索与 BM25 的结果，结合上下文重排片段，再由 MemPursuit 选择互补证据。](docs/assets/diagrams/search-pipeline.zh-CN.png)
 
-SIRA 查询扩展、NEAR 残差检索、角色过滤、冲突证据核验和长问题处理均为可选策略。Search 返回证据，回答生成与裁判属于独立评测流程。各策略细节见 [策略文档](docs/configuration.zh-CN.md)。
+SIRA 查询扩展、NEAR 残差检索、角色过滤、冲突证据核验和长问题处理均为可选策略。Search 返回证据，回答生成与裁判属于独立评测流程。各策略细节见 [策略文档](docs/configuration.zh-CN.md#算法说明)。
 
 ## 1. 快速开始
 
@@ -111,6 +106,8 @@ export MEMORY_API_KEY='YOUR_MEMORY_SERVICE_KEY'
 
 受保护接口使用 `X-Api-Key`，也支持 `Authorization: Bearer <key>` 或 `Token <key>`。管理接口 `/config` 与 `/clear` 必须提供服务密钥，即使设置 `ALLOW_UNAUTHENTICATED=true` 也不豁免。参数列表见 `/docs` 及配置说明。
 
+通过 `/add` 写入的对话保存在 SQLite 中。调用 `/search` 时，传入同一个 `user_id` 即可检索该用户的历史对话。
+
 ```bash
 curl --fail "$MEMORY_BASE_URL/health"
 
@@ -129,9 +126,18 @@ curl --fail -X POST "$MEMORY_BASE_URL/clear" \
 
 Add 返回 `success/request_id/user_id/session_id`。相同 request_id 和相同内容重复写入幂等；内容不同返回 409。`timestamp` 为可选 Unix 毫秒。
 
-Search 返回 `{"data":[{"id":"...","content":"...","score":0.8,"created_at":"..."}]}`；可传 `options` 支持选择题。不同 user_id 的数据隔离。使用 MemPursuit 或排名融合时应保留返回顺序，不能再按 score 排序。`include_recall_queue: true` 可返回诊断队列来源；文件诊断仅允许本机鉴权请求，并限定在 `[service].diagnostics_dir` 内写入；详见[诊断目录配置](docs/configuration.zh-CN.md#诊断输出目录)。
+Search 返回 `{"data":[{"id":"...","content":"...","score":0.8,"created_at":"..."}]}`；可传 `options` 支持选择题。使用 MemPursuit 或排名融合时应保留返回顺序，不能再按 score 排序。`include_recall_queue: true` 可返回诊断队列来源；文件诊断仅允许本机鉴权请求，并限定在 `[service].diagnostics_dir` 内写入；详见[诊断目录配置](docs/configuration.zh-CN.md#诊断输出目录)。
 
-## 3. 复现 Recall 与端到端结果
+## 3. 评测结果与复现
+
+我们在本地使用 LoCoMo-refined 全量数据对比了两种检索方案。
+
+| 检索方案 | Evidence Recall@100 |
+|---|---:|
+| InvMem（团队修改的 small2big 版） | 91.51% |
+| PaiMem | **97.24%** |
+
+两组均使用 `BAAI/bge-small-en-v1.5` 作为嵌入模型，设置 `top_k=100`，返回文本长度相近。计算 Evidence Recall@100 时，先逐题统计前 100 条检索结果覆盖了该题标注证据的多大比例，再对所有有证据标注的问题取平均。全量数据包含调优和选型时使用的样本。
 
 完整流程和数据集对应关系见 [评测复现](docs/evaluation.zh-CN.md)。顺序是：获取固定版本 AML pipeline → 下载公开数据 → 转为 normalized JSONL → 启动指定配置服务 → 执行评测。
 
@@ -159,7 +165,7 @@ PYTHONHASHSEED=0 uv run python scripts/run_aml_e2e.py \
 
 ### PaiMem 的离线调优方法
 
-开发阶段，PaiMem 团队借鉴 [ModularRSI](https://arxiv.org/abs/2609.14857) 的思路，通过离线递归自我改进（recursive self-improvement，RSI）逐轮测试单项改动，选定检索方案。
+我们在离线递归自我改进（recursive self-improvement，RSI）中逐轮测试单项改动，根据证据召回率和返回文本长度筛选候选配置，再依据端到端评测结果确定最终检索方案。这一调优方法借鉴了 [ModularRSI](https://arxiv.org/abs/2609.14857)。
 
 ![RSI 每轮只修改检索流程中的一项，比较召回表现与返回长度，再用独立验证集评估候选方案。](docs/assets/diagrams/rsi-workflow.zh-CN.png)
 
@@ -218,7 +224,7 @@ PYTHONHASHSEED=0 uv run python scripts/run_aml_e2e.py \
 | [MemReranker](https://huggingface.co/IAAR-Shanghai/MemReranker-4B) · [论文](https://arxiv.org/abs/2605.06132) | 可选的记忆重排模型 |
 | [Agent Memory Leaderboard](https://github.com/AML-memory/agent-memory-leaderboard) | 评测协议与外部 answer/judge pipeline |
 
-来源与许可见 [第三方说明](THIRD_PARTY_NOTICES.zh-CN.md)，各策略在 PaiMem 中的实现见 [策略文档](docs/configuration.zh-CN.md#算法说明)。
+各策略在 PaiMem 中的实现见 [策略文档](docs/configuration.zh-CN.md#算法说明)。
 
 ## 7. License
 

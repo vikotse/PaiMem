@@ -2,9 +2,12 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-**Long-Term Memory with Hybrid Retrieval and Context-Aware Evidence Selection**
+PaiMem is a long-term memory retrieval framework for agents. When several conversations mention the same fact, highly relevant passages can occupy multiple slots in the top-k results and crowd out other evidence needed to answer the question. PaiMem uses hybrid retrieval to find passages in the original dialogue, scores them in context, and selects each additional passage based on what it adds to the evidence already retrieved.
 
-PaiMem stores original conversation chunks and retrieves traceable evidence through semantic and lexical retrieval, context-aware reranking, evidence selection, and context reconstruction. It provides SQLite persistence, a user-isolated HTTP API, and tools for retrieval and end-to-end evaluation.
+- PaiMem v0.1.0 **placed 4th among 89 entries** on the AML Cycle 2 open-source Textual Memory leaderboard, with an overall score of 60.41. [Cycle 2 standings](https://agentmemoryleaderboard.ai/results/cycle-2/#academic-textual)
+- For our local evaluation on the full LoCoMo-refined dataset, we used our small2big variant of InvMem, the top-ranked open-source method on the AML Cycle 1 Textual Memory leaderboard, as the baseline. With both systems returning similar amounts of text, Evidence Recall@100 rose from **91.51%** for the baseline to **97.24%** for PaiMem (**+5.73 percentage points**). [Cycle 1 standings](https://agentmemories.ai/results/cycle-1/#academic-textual)
+
+[Quick start](#1-quick-start) · [API examples](#2-api-and-request-examples) · [Evaluation results and reproduction](#3-evaluation-results-and-reproduction)
 
 ## Key Insights
 
@@ -14,15 +17,9 @@ PaiMem formulates long-term memory reading as **query-conditioned selection of c
 - **Decouple retrieval and assessment granularity**: Locate information through fine-grained chunks, while assessing relevance and selecting evidence using context-enriched representations.
 - **Account for both relevance and complementarity**: Assess candidate relevance through reranking, then select complementary evidence using MemPursuit’s query-reconstruction residual as a proxy for uncovered information.
 
-```text
-/add: Messages → chunking / embedding → SQLite
-/search: Query → Dense + BM25 → RRF → context-aware reranking → MemPursuit
-      → optional rank fusion → same-session context expansion / packing → evidence
-```
-
 ![PaiMem merges dense and BM25 results with RRF, reranks passages in context, and uses MemPursuit to select complementary evidence.](docs/assets/diagrams/search-pipeline.en.png)
 
-SIRA query expansion, NEAR residual retrieval, role filtering, conflict-evidence checks, and long-question processing are optional. Search returns evidence; answer generation and judging are part of the separate evaluation workflow. See [configuration and strategies](docs/configuration.md).
+SIRA query expansion, NEAR residual retrieval, role filtering, conflict-evidence checks, and long-question processing are optional. Search returns evidence; answer generation and judging are part of the separate evaluation workflow. See [strategy documentation](docs/configuration.md#algorithm-documentation).
 
 ## 1. Quick start
 
@@ -109,6 +106,8 @@ export MEMORY_API_KEY='YOUR_MEMORY_SERVICE_KEY'
 
 Protected endpoints accept `X-Api-Key`, `Authorization: Bearer <key>`, or `Authorization: Token <key>`. The `/config` and `/clear` management endpoints require the service key, including when `ALLOW_UNAUTHENTICATED=true`. See `/docs` and the configuration guide for parameters.
 
+PaiMem stores conversations submitted to `/add` in SQLite. Pass the same `user_id` to `/search` to retrieve passages from that user’s conversation history.
+
 ```bash
 curl --fail "$MEMORY_BASE_URL/health"
 
@@ -127,9 +126,18 @@ curl --fail -X POST "$MEMORY_BASE_URL/clear" \
 
 Add returns `success/request_id/user_id/session_id`. Repeating a request_id with identical content is idempotent; different content returns HTTP 409. The optional `timestamp` uses Unix milliseconds.
 
-Search returns `{"data":[{"id":"...","content":"...","score":0.8,"created_at":"..."}]}` and accepts `options` for multiple-choice questions. Data is isolated by user_id. Preserve the returned order when using MemPursuit or rank fusion; do not sort again by score. Set `include_recall_queue: true` to include diagnostic queue sources. File-based diagnostics require an authenticated loopback request and are restricted to `[service].diagnostics_dir`; see [diagnostic directory configuration](docs/configuration.md#diagnostic-output-directory).
+Search returns `{"data":[{"id":"...","content":"...","score":0.8,"created_at":"..."}]}` and accepts `options` for multiple-choice questions. Preserve the returned order when using MemPursuit or rank fusion; do not sort again by score. Set `include_recall_queue: true` to include diagnostic queue sources. File-based diagnostics require an authenticated loopback request and are restricted to `[service].diagnostics_dir`; see [diagnostic directory configuration](docs/configuration.md#diagnostic-output-directory).
 
-## 3. Reproduce retrieval and end-to-end results
+## 3. Evaluation results and reproduction
+
+We compared two retrieval configurations locally on the full LoCoMo-refined dataset.
+
+| Retrieval system | Evidence Recall@100 |
+|---|---:|
+| InvMem (our small2big variant) | 91.51% |
+| PaiMem | **97.24%** |
+
+Both runs used `BAAI/bge-small-en-v1.5` for embeddings and `top_k=100`, and returned contexts of similar length. To compute Evidence Recall@100, we measure the fraction of each question’s annotated evidence that appears in the top 100 results, then average over questions with evidence labels. The full dataset includes samples used during tuning and configuration selection.
 
 See [evaluation](docs/evaluation.md) for the complete workflow and dataset mapping: obtain a fixed AML pipeline revision → download public data → convert to normalized JSONL → start the chosen service configuration → evaluate.
 
@@ -157,7 +165,7 @@ The same configuration and output directory support resuming. Use a new output d
 
 ### How PaiMem was tuned offline
 
-During development, the PaiMem team selected its retrieval pipeline by testing one change at a time in an offline recursive self-improvement (RSI) loop inspired by [ModularRSI](https://arxiv.org/abs/2609.14857).
+We tested one change at a time in an offline recursive self-improvement (RSI) loop. We shortlisted configurations using evidence recall and returned context length, then selected the final pipeline using end-to-end evaluation. This procedure draws on [ModularRSI](https://arxiv.org/abs/2609.14857).
 
 ![Each RSI iteration changes one part of the retrieval pipeline and compares recall and output length. Candidates are validated on a separate dataset.](docs/assets/diagrams/rsi-workflow.en.png)
 
@@ -216,7 +224,7 @@ These results report mean request latency for this configuration and sample. Sea
 | [MemReranker](https://huggingface.co/IAAR-Shanghai/MemReranker-4B) · [Paper](https://arxiv.org/abs/2605.06132) | Optional memory reranking model |
 | [Agent Memory Leaderboard](https://github.com/AML-memory/agent-memory-leaderboard) | Evaluation protocol and external answer/judge pipelines |
 
-See [third-party notices](THIRD_PARTY_NOTICES.md) for sources and licenses, and [strategy documentation](docs/configuration.md#algorithm-documentation) for their implementation in PaiMem.
+For implementation details, see the [strategy documentation](docs/configuration.md#algorithm-documentation).
 
 ## 7. License
 
